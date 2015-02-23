@@ -9,6 +9,7 @@ import android.webkit.WebViewClient;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.util.Date;
 import java.util.UUID;
 
 /**
@@ -49,11 +50,51 @@ public class CWWebLibraryManager {
         try {
             json.put("_name", "remotedisconnected");
             json.put("identifier", identifier);
+            this._sendJSONToView(json);
         } catch (JSONException e) {
             e.printStackTrace();
         }
+    }
 
-        this._sendJSONToView(json);
+    private void _sendToView_debugInfo() {
+        JSONObject json = new JSONObject();
+        try {
+            //TODO use actual debug info
+            json.put("_name", "debuginfo");
+            json.put("debug", true);
+            json.put("logLevel", 3);
+            _sendJSONToView(json);
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void _sendToView_connectWebsocket() {
+        JSONObject json = new JSONObject();
+        try {
+            json.put("_name", "connectwebsocket");
+            _sendJSONToView(json);
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void _sendToView_localInfo() {
+        JSONObject json = new JSONObject();
+        try {
+            //TODO get this info from AppState
+            //TODO get missing info like IP, PPI, ...
+            json.put("_name", "localinfo");
+            json.put("identifier", UUID.randomUUID().toString());
+            json.put("launchDate", new Date().getTime());
+            json.put("ips", "");
+            json.put("port", 0);
+            json.put("ppi", 150);
+            json.put("supportsMC", false);
+            _sendJSONToView(json);
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
     }
 
     private void _sendJSONToView(JSONObject json) {
@@ -72,32 +113,14 @@ public class CWWebLibraryManager {
         webView.loadUrl("javascript:window.nativeCallWebsocketDidOpen = function() { Android.nativeCallWebsocketDidOpen(); }");
         webView.loadUrl("javascript:window.nativeCallRemoteDidConnect = function(identifier) { Android.nativeCallRemoteDidConnect(identifier); }");
 
-        //Need to: Setup JS Callbacks, send debuginfo, send connectwebsocket
-        //Then the usual stuff begins: when we receive the connectwebsocket callback, we send the localinfo, a.s.o.
-        JSONObject json = new JSONObject();
-        try {
-            json.put("_name", "connectwebsocket");
-        } catch (JSONException e) {
-            e.printStackTrace();
-        }
-
-        _sendJSONToView(json);
+        this._sendToView_debugInfo();
+        this._sendToView_connectWebsocket();
     }
 
     @JavascriptInterface
     public void nativeCallWebsocketDidOpen() {
         Log.d("View", "WEBSOCKET DID OPEN");
-
-        final JSONObject json = new JSONObject();
-        try {
-            json.put("_name", "localinfo");
-            json.put("identifier", UUID.randomUUID().toString());
-            json.put("supportsMC", false);
-        } catch (JSONException e) {
-            e.printStackTrace();
-        }
-
-        this._sendJSONToView(json);
+        this._sendToView_localInfo();
     }
 
     @JavascriptInterface
