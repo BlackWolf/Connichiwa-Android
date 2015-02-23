@@ -15,6 +15,7 @@ import fi.iki.elonen.NanoHTTPD;
  */
 public class CWHTTPServer extends NanoHTTPD {
 
+    public CWServerManagerDelegate delegate;
     private Context context;
 
     private Map<String, CWHTTPHandler> handler = new LinkedHashMap<String, CWHTTPHandler>();

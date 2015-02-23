@@ -18,6 +18,7 @@ import fi.iki.elonen.WebSocketFrame;
  */
 public class CWWebSocketServer extends NanoWebSocketServer {
 
+    public CWServerManagerDelegate delegate;
     private Map<String, CWWebSocket> socketIdentifiers = new HashMap<String, CWWebSocket>();
     private CWWebSocket localSocket;
 
@@ -93,7 +94,7 @@ public class CWWebSocketServer extends NanoWebSocketServer {
 
         this.socketIdentifiers.remove(identifier);
 
-        //TODO send disconnect to app
+        if (this.delegate != null) this.delegate.remoteDidDisconnect(identifier);
     }
 
     public void push(String target, String payload) {
