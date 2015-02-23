@@ -53,7 +53,7 @@ public class FullscreenActivity extends Activity {
 
         try {
             httpServer.start();
-            wsServer.start();
+            wsServer.start(0);
         } catch (IOException e) {
             e.printStackTrace();
         }
