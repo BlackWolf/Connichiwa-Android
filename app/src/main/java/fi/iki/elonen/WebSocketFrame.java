@@ -292,7 +292,8 @@ public class WebSocketFrame {
     }
 
     public static byte[] text2Binary(String payload) throws CharacterCodingException {
-        return TEXT_ENCODER.encode(CharBuffer.wrap(payload)).array();
+//        return TEXT_ENCODER.encode(CharBuffer.wrap(payload)).array();
+        return payload.getBytes(TEXT_CHARSET);
     }
 
     @Override
