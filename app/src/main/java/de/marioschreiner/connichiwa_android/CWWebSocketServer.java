@@ -28,8 +28,6 @@ public class CWWebSocketServer extends NanoWebSocketServer {
 
     @Override
     public WebSocket openWebSocket(IHTTPSession handshake) {
-        Log.d("WSS", "OPEN");
-
         return new CWWebSocket(handshake) {
             @Override
             protected void onMessage(WebSocketFrame messageFrame) {
@@ -90,8 +88,6 @@ public class CWWebSocketServer extends NanoWebSocketServer {
     }
 
     private void onIdentifiedWebSocketClose(String identifier) {
-        Log.d("WSS", "CLOSE");
-
         this.socketIdentifiers.remove(identifier);
 
         if (this.delegate != null) this.delegate.remoteDidDisconnect(identifier);

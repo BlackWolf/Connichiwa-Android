@@ -22,7 +22,6 @@ public abstract class CWWebSocket extends WebSocket {
 
     @Override
     protected void onPong(WebSocketFrame pongFrame) {
-        Log.d("WSS", "Pong: " + pongFrame);
     }
 
     @Override

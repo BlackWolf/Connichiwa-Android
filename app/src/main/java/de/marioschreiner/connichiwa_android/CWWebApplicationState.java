@@ -7,6 +7,8 @@ import java.util.Map;
  * Created by BlackWolf on 23/02/15.
  */
 public abstract class CWWebApplicationState {
+    public static int LOG_LEVEL = 0;
+
     public String identifier;
     public Date launchDate;
     public String deviceName;

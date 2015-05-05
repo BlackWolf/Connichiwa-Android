@@ -44,6 +44,7 @@ public class CWWebLibraryManager {
             public void onProgressChanged (WebView view, int newProgress) {
                 if (this.sendDidStartLoading == false) {
                     webViewDidStartLoading();
+                    this.sendDidStartLoading = true;
                 }
 
                 if (newProgress == 100) {
@@ -74,7 +75,7 @@ public class CWWebLibraryManager {
             //TODO use actual debug info
             json.put("_name", "debuginfo");
             json.put("debug", true);
-            json.put("logLevel", 3);
+            json.put("logLevel", CWWebApplicationState.LOG_LEVEL);
             _sendJSONToView(json);
         } catch (JSONException e) {
             e.printStackTrace();
@@ -115,7 +116,6 @@ public class CWWebLibraryManager {
     }
 
     private void _sendJSONToView(JSONObject json) {
-        Log.d("View", "SENDING "+json.toString());
         this._sendToView(json.toString());
     }
 
@@ -145,13 +145,12 @@ public class CWWebLibraryManager {
 
     @JavascriptInterface
     public void nativeCallWebsocketDidOpen() {
-        Log.d("View", "WEBSOCKET DID OPEN");
         this._sendToView_localInfo();
     }
 
     @JavascriptInterface
     public void nativeCallRemoteDidConnect(String identifier) {
-        Log.d("VIEW", "REMOTE DID CONNECT");
+        Log.d("VIEW", "Remote device did connect");
     }
 
     /* HELPER */
