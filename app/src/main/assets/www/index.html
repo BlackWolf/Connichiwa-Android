@@ -20,15 +20,6 @@
       <div id="device_overview">
       <table>
         <tr>
-          <td id="devices_nearby_count">
-          </td>
-          <td id="devices_nearby_text_devices">
-          </td>
-          <td id="devices_nearby_text_rest">
-          nearby.
-          </td>
-        </tr>
-        <tr>
           <td id="devices_connected_count">
           </td>
           <td id="devices_connected_text_devices">
@@ -51,55 +42,31 @@
     </div>
 
     <div id="info">
-      To detect a device:
-      <ul>
-        <li>Run this application on another iOS device</li>
-        <li>Run the Connichiwa Client for Mac on a Mac (<span class="url">http://mac.connichiwa.info</span>)</li>
-      </ul>
-
       To connect a device:
       <ul>
-        <li>Any detected device will automatically be connected</li>
-        <li>Access <span class="url"><span class="local"></span>/remote</span> in a web browser on devices in the same network</li>
+        <li>Access <span class="url"><span class="local"></span></span> in a web browser on devices in the same network</li>
       </ul>
     </div>
 
     <script>
       //All Connichiwa-related stuff should be done in Connichiwa.onLoad()
       Connichiwa.onLoad(function() {
-        //Let's connect any nearby device automatically
-        //Also load the stylesheet on any connected device
+        //Auto-load the stylesheet on any connected device
         if (Connichiwa.isMaster()) {
-          Connichiwa.autoConnect = true;
           Connichiwa.autoLoad = [ "/styles.css" ];
         }
 
-        var detectedDevices  = 0;
         var connectedDevices = 0;
-        
-        //Count nearby devices
-        Connichiwa.on("deviceDetected", function() {
-          detectedDevices++;
-          updateDetectedDevices();
-        });
-        Connichiwa.on("deviceLost", function() {
-          detectedDevices--;
-          updateDetectedDevices();
-        });
 
         Connichiwa.on("deviceConnected", function(device) {
-          //Count connected devices
           connectedDevices++;
           updateConnectedDevices();
 
-          //Show a div on the remote device that shows its distance
-          //The distance will be updated in .on("deviceDistanceChanged")
+          //Just show a div on the remote device that shows its connected
           var remoteDiv = $("<div></div>");
           remoteDiv.addClass("center");
-          remoteDiv.html("I am connected and <b><span id='distance'></span></b> meters away!");
+          remoteDiv.html("I am connected!");
           device.insert(remoteDiv);
-
-          updateRemoteDistance(device);
         });
 
         Connichiwa.on("deviceDisconnected", function() {
@@ -107,30 +74,11 @@
           updateConnectedDevices();
         });
 
-        //Live-update the distance in the remote devices
-        Connichiwa.on("deviceDistanceChanged", function(device) {
-          updateRemoteDistance(device);
-        });
-
-        function updateDetectedDevices() {
-          $("#devices_nearby_count").html("<b>"+detectedDevices+"</b>");
-          $("#devices_nearby_text_devices").html(pluralize("device", detectedDevices));
-        }
-
         function updateConnectedDevices() {
           $("#devices_connected_count").html("<b>"+connectedDevices+"</b>");
           $("#devices_connected_text_devices").html(pluralize("device", connectedDevices));
         }
 
-        function updateRemoteDistance(device) {
-          if (device.distance < 0) { //distance cannot be determined
-            device.replaceContent("#distance", "(unknown)");
-          } else {
-            device.replaceContent("#distance", device.distance);
-          }
-        }
-
-        updateDetectedDevices();
         updateConnectedDevices();
 
         //Show the correct IP and port in our info div
@@ -140,6 +88,7 @@
         }
       });
 
+      /** Appends an 's' to word if number is not 1, otherwise returns word */
       function pluralize(word, number) {
         if (number === 1) return word;
         return word+"s";

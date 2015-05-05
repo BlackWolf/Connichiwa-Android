@@ -1,11 +1,15 @@
 package de.marioschreiner.connichiwa_android;
 
+import android.content.Context;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
 import android.util.Log;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -18,11 +22,13 @@ import java.util.UUID;
 public class CWWebLibraryManager {
 
     private CWWebApplicationState appState;
+    private Context context;
 
     public WebView webView;
 
-    public CWWebLibraryManager(CWWebApplicationState appState) {
+    public CWWebLibraryManager(CWWebApplicationState appState, Context context) {
         this.appState = appState;
+        this.context = context;
     }
 
     public void connect() {
@@ -32,8 +38,14 @@ public class CWWebLibraryManager {
         webView.getSettings().setJavaScriptEnabled(true);
         webView.addJavascriptInterface(this, "Android");
         webView.setWebChromeClient(new WebChromeClient() {
+            private boolean sendDidStartLoading = false;
+
             @Override
             public void onProgressChanged (WebView view, int newProgress) {
+                if (this.sendDidStartLoading == false) {
+                    webViewDidStartLoading();
+                }
+
                 if (newProgress == 100) {
                     webViewDidFinishLoading();
                 }
@@ -82,13 +94,18 @@ public class CWWebLibraryManager {
     private void _sendToView_localInfo() {
         JSONObject json = new JSONObject();
         try {
+            //Get the IP
+            WifiManager mWifiManager = (WifiManager)this.context.getSystemService(Context.WIFI_SERVICE);
+            WifiInfo mWifiInfo = mWifiManager.getConnectionInfo();
+            String ip = intToIP(mWifiInfo.getIpAddress());
+
             //TODO get this info from AppState
-            //TODO get missing info like IP, PPI, ...
+            //TODO get missing info like PPI, ...
             json.put("_name", "localinfo");
             json.put("identifier", UUID.randomUUID().toString());
             json.put("launchDate", new Date().getTime());
-            json.put("ips", "");
-            json.put("port", 0);
+            json.put("ips", new JSONArray(new String[]{ip}));
+            json.put("port", this.appState.webserverPort);
             json.put("ppi", 150);
             json.put("supportsMC", false);
             _sendJSONToView(json);
@@ -98,23 +115,32 @@ public class CWWebLibraryManager {
     }
 
     private void _sendJSONToView(JSONObject json) {
+        Log.d("View", "SENDING "+json.toString());
         this._sendToView(json.toString());
     }
 
     private void _sendToView(final String message) {
         this.appState.runOnUiThread(new Runnable() {
             public void run() {
-                webView.loadUrl("javascript:CWNativeMasterCommunication.parse('" + message + "');");
+                webView.loadUrl("javascript:CWNativeBridge.parse('" + message + "');");
             }
         });
     }
 
+    private void webViewDidStartLoading() {
+        this._registerJSCallbacks();
+        webView.loadUrl("javascript:var RUN_BY_CONNICHIWA_NATIVE = true;");
+    }
+
     private void webViewDidFinishLoading() {
-        webView.loadUrl("javascript:window.nativeCallWebsocketDidOpen = function() { Android.nativeCallWebsocketDidOpen(); }");
-        webView.loadUrl("javascript:window.nativeCallRemoteDidConnect = function(identifier) { Android.nativeCallRemoteDidConnect(identifier); }");
 
         this._sendToView_debugInfo();
         this._sendToView_connectWebsocket();
+    }
+
+    private void _registerJSCallbacks() {
+        webView.loadUrl("javascript:window.nativeCallWebsocketDidOpen = function() { Android.nativeCallWebsocketDidOpen(); }");
+        webView.loadUrl("javascript:window.nativeCallRemoteDidConnect = function(identifier) { Android.nativeCallRemoteDidConnect(identifier); }");
     }
 
     @JavascriptInterface
@@ -126,5 +152,13 @@ public class CWWebLibraryManager {
     @JavascriptInterface
     public void nativeCallRemoteDidConnect(String identifier) {
         Log.d("VIEW", "REMOTE DID CONNECT");
+    }
+
+    /* HELPER */
+
+    //Thank you http://stackoverflow.com/questions/12103898/how-can-i-get-ip-addresses-of-other-wifi-enabled-devices-by-programmatically-on
+    public String intToIP(int i) {
+        return (( i & 0xFF)+ "."+((i >> 8 ) & 0xFF)+
+                "."+((i >> 16 ) & 0xFF)+"."+((i >> 24 ) & 0xFF));
     }
 }

@@ -30,7 +30,7 @@ public class CWWebApplication extends CWWebApplicationState implements CWServerM
 
         this.serverManager =  new CWServerManager();
         this.serverManager.setDelegate(this);
-        this.webLibManager = new CWWebLibraryManager(this);
+        this.webLibManager = new CWWebLibraryManager(this, this.context);
     }
 
     public void launch(String documentRoot, WebView webView, int port) {

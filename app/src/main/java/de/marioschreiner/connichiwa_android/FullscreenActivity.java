@@ -20,8 +20,6 @@ import fi.iki.elonen.NanoHTTPD;
 
 public class FullscreenActivity extends Activity {
 
-
-
     private WebView localWebView;
 
     @Override
@@ -39,9 +37,9 @@ public class FullscreenActivity extends Activity {
                 | View.SYSTEM_UI_FLAG_FULLSCREEN // hide status bar
                 | View.SYSTEM_UI_FLAG_IMMERSIVE);
 
-        localWebView = (WebView)(findViewById(R.id.webView));
+        this.localWebView = (WebView)(findViewById(R.id.webView));
 
-        new CWWebApplication(this, this.getApplicationContext()).launch("/www", localWebView);
+        new CWWebApplication(this, this.getApplicationContext()).launch("/www", this.localWebView);
     }
 
     @Override
