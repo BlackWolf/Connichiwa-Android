@@ -7,93 +7,13 @@
 
 		<script src="/connichiwa/scripts/gyro.min.js"></script>
 		<script src="/connichiwa/scripts/jquery.js"></script>
+    <script src="/connichiwa/scripts/ractive.js"></script>
     <script src="/connichiwa/connichiwa.min.js"></script>
+    <script src="/main.js"></script>
 
     <link rel="stylesheet" href="/styles.css">
 	</head>
 	<body>
-    <div id="top">&nbsp;</div>
-
-    <div id="content" class="center">
-      <h1>Connichiwa is running!</h1>
-
-      <div id="device_overview">
-      <table>
-        <tr>
-          <td id="devices_connected_count">
-          </td>
-          <td id="devices_connected_text_devices">
-          </td>
-          <td id="devices_connected_text_rest">
-          connected.
-          </td>
-        </tr>
-        <tr class="invisible">
-          <td>
-          </td>
-          <td>
-          devices
-          </td>
-          <td>
-          </td>
-        </tr>
-      </table>
-      </div>
-    </div>
-
-    <div id="info">
-      To connect a device:
-      <ul>
-        <li>Access <span class="url"><span class="local"></span></span> in a web browser on devices in the same network</li>
-      </ul>
-    </div>
-
-    <script>
-      //All Connichiwa-related stuff should be done in Connichiwa.onLoad()
-      Connichiwa.onLoad(function() {
-        //Auto-load the stylesheet on any connected device
-        if (Connichiwa.isMaster()) {
-          Connichiwa.autoLoad = [ "/styles.css" ];
-        }
-
-        var connectedDevices = 0;
-
-        Connichiwa.on("deviceConnected", function(device) {
-          connectedDevices++;
-          updateConnectedDevices();
-
-          //Just show a div on the remote device that shows its connected
-          var remoteDiv = $("<div></div>");
-          remoteDiv.addClass("center");
-          remoteDiv.html("I am connected!");
-          device.insert(remoteDiv);
-        });
-
-        Connichiwa.on("deviceDisconnected", function() {
-          connectedDevices--;
-          updateConnectedDevices();
-        });
-
-        function updateConnectedDevices() {
-          $("#devices_connected_count").html("<b>"+connectedDevices+"</b>");
-          $("#devices_connected_text_devices").html(pluralize("device", connectedDevices));
-        }
-
-        updateConnectedDevices();
-
-        //Show the correct IP and port in our info div
-        var ips = Connichiwa.getIPs();
-        if (ips.length > 0) {
-          $(".url .local").text(ips[0]+":"+Connichiwa.getPort());
-        }
-      });
-
-      /** Appends an 's' to word if number is not 1, otherwise returns word */
-      function pluralize(word, number) {
-        if (number === 1) return word;
-        return word+"s";
-      }
-    </script>
 	</body>
 </html>
 

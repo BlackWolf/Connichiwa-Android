@@ -1,0 +1,54 @@
+<template name="master">
+  <div id="top">&nbsp;</div>
+  <div id="content" class="center">
+    <h1>Connichiwa is running!</h1>
+
+    <div id="device_overview">
+    <table>
+      <tr>
+        <td id="devices_nearby_count">
+        {{devices_nearby_count}}
+        </td>
+        <td id="devices_nearby_text_devices">
+        {{devices_nearby_text_devices}}
+        </td>
+        <td id="devices_nearby_text_rest">
+        nearby.
+        </td>
+      </tr>
+      <tr>
+        <td id="devices_connected_count">
+        {{devices_connected_count}}
+        </td>
+        <td id="devices_connected_text_devices">
+        {{devices_connected_text_devices}}
+        </td>
+        <td id="devices_connected_text_rest">
+        connected.
+        </td>
+      </tr>
+      <tr class="invisible">
+        <td>
+        </td>
+        <td>
+        devices
+        </td>
+        <td>
+        </td>
+      </tr>
+    </table>
+    </div>
+  </div>
+
+  <div id="info" class="info">
+    To detect a device:
+    <ul>
+      <li>Connichiwa for Android does not yet support device detection over Bluetooth</li>
+    </ul>
+
+    To connect a device:
+    <ul>
+      <li>Access <span class="url">{{local_url}}</span> in a web browser on devices in the same network</li>
+    </ul>
+  </div>
+</template>
