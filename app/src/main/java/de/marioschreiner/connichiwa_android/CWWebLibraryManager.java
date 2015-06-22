@@ -1,8 +1,10 @@
 package de.marioschreiner.connichiwa_android;
 
+import android.app.Activity;
 import android.content.Context;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
+import android.util.DisplayMetrics;
 import android.util.Log;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
@@ -13,7 +15,12 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.net.SocketException;
 import java.util.Date;
+import java.util.Dictionary;
+import java.util.Enumeration;
 import java.util.UUID;
 
 /**
@@ -23,12 +30,14 @@ public class CWWebLibraryManager {
 
     private CWWebApplicationState appState;
     private Context context;
+    private Activity activity;
 
     public WebView webView;
 
-    public CWWebLibraryManager(CWWebApplicationState appState, Context context) {
+    public CWWebLibraryManager(CWWebApplicationState appState, Context context, Activity activity) {
         this.appState = appState;
         this.context = context;
+        this.activity = activity;
     }
 
     public void connect() {
@@ -100,6 +109,11 @@ public class CWWebLibraryManager {
             WifiInfo mWifiInfo = mWifiManager.getConnectionInfo();
             String ip = intToIP(mWifiInfo.getIpAddress());
 
+            //Get PPI
+            DisplayMetrics dm = new DisplayMetrics();
+            this.activity.getWindowManager().getDefaultDisplay().getMetrics(dm);
+            double ppi = Math.sqrt(dm.xdpi * dm.ydpi);
+
             //TODO get this info from AppState
             //TODO get missing info like PPI, ...
             json.put("_name", "localinfo");
@@ -107,7 +121,7 @@ public class CWWebLibraryManager {
             json.put("launchDate", new Date().getTime());
             json.put("ips", new JSONArray(new String[]{ip}));
             json.put("port", this.appState.webserverPort);
-            json.put("ppi", 150);
+            json.put("ppi", ppi);
             json.put("supportsMC", false);
             _sendJSONToView(json);
         } catch (JSONException e) {
@@ -129,22 +143,33 @@ public class CWWebLibraryManager {
 
     private void webViewDidStartLoading() {
         this._registerJSCallbacks();
-        webView.loadUrl("javascript:var RUN_BY_CONNICHIWA_NATIVE = true;");
+        webView.loadUrl("javascript:var _CW_NATIVE = {};");
     }
 
     private void webViewDidFinishLoading() {
-
-        this._sendToView_debugInfo();
-        this._sendToView_connectWebsocket();
     }
 
     private void _registerJSCallbacks() {
+        webView.loadUrl("javascript:window.nativeCallLocalInfo = function(infoString) { Android.nativeCallLocalInfo(infoString); }");
         webView.loadUrl("javascript:window.nativeCallWebsocketDidOpen = function() { Android.nativeCallWebsocketDidOpen(); }");
         webView.loadUrl("javascript:window.nativeCallRemoteDidConnect = function(identifier) { Android.nativeCallRemoteDidConnect(identifier); }");
     }
 
     @JavascriptInterface
+    public void nativeCallLocalInfo(String infoString) {
+        JSONObject info = null;
+        try {
+            info = new JSONObject(infoString);
+            this.appState.identifier = info.getString("identifier");
+            this.appState.launchDate = new Date(info.getLong("launchDate"));
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @JavascriptInterface
     public void nativeCallWebsocketDidOpen() {
+        this._sendToView_debugInfo();
         this._sendToView_localInfo();
     }
 

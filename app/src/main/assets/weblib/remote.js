@@ -3,27 +3,48 @@
 
 var CWModules = {};
 
-CWModules._modules = [];
+// CWModules._modules = [];
+// CWModules._actualModules = {};
+CWModules._modules = {};
 CWModules._didInit = false;
 
-CWModules.add = function(module) {
-  if (this._modules.indexOf(module) !== -1) return;
+CWModules.retrieve = function(module) {
+  if (module in this._modules === false) {
+    this._modules[module] = {};
+  }
 
-  this._modules.push(module);
+  return this._modules[module];
 }.bind(CWModules);
+
 
 CWModules.init = function() {
   if (this._didInit) throw 'Cannot initialize modules twice';
 
-  //We need to setTimeout the initialization to make sure that everything
+  //We need to setTimeout the initialization to make sure that everything else
   //is set up
   var that = this;
   window.setTimeout(function() {
-    for (var i = 0; i < that._modules.length; i++) {
-      var module = that._modules[i];
-      console.log('Initializing module ' + module + '...');
-      if (window[module].__constructor) window[module].__constructor();
-    }  
+    // for (var i = 0; i < that._modules.length; i++) {
+    for (var moduleName in that._modules) {
+      if (that._modules.hasOwnProperty(moduleName)) {
+        console.log('Initializing module ' + moduleName + '...');
+
+        var module = that._modules[moduleName];
+
+        //Bind every function in the module to it, so the module can use "this"
+        for (var key in module) {
+          if (module.hasOwnProperty(key) && typeof(module[key]) === 'function') {
+            module[key] = module[key].bind(module);
+          }
+        }
+
+        //Call constructor if module has one
+        //Delay call to make sure all module have been initialized
+        if (module.__constructor) {
+          window.setTimeout(module.__constructor, 0);
+        }
+      }
+    }
 
     CWNativeBridge.callOnNative("nativeCallLibraryDidLoad");
   }, 0);
@@ -54,7 +75,7 @@ CWModules.init = function() {
  *    method. For example, you can **not** store functions in the data store.
  * @namespace CWDatastore
  */
-var CWDatastore = CWDatastore || {};
+var CWDatastore = CWModules.retrieve('CWDatastore');
 
 /**
  * The datastores stored data :-)
@@ -65,88 +86,9 @@ CWDatastore._data = {};
 
 
 /**
- * Initializes CWDatastore, such as registering for events
- * @function
- * @private
- */
-CWDatastore.__constructor = function() {
-  //When a new device connects, we sync the entire data store to it so it
-  //has all the latest data. 
-  Connichiwa.on('deviceconnected', function(device) {
-    CWDebug.log(3, 'Syncing entire datastore to connected device');
-    CWDatastore._syncStoreToDevice(device.getIdentifier());
-  });
-}.bind(CWDatastore);
-
-
-/**
- * Stores or updates the given key/value pairs in the given collection
- * @param {String} [collection] The collection to write to. If no collection
- *    is provided, a default collection will be used. Collection names may not
- *    start with an underscore.
- * @param {Object} dict An object containing key/value pairs. All of these
- *    will be stored in the given collection. Existing entries will be
- *    overwritten.
- * @function
- *//**
- * Stores or updates the given key/value pair in the given collection
- * @param {String} [collection] The collection to write to. If no collection
- *    is provided, a default collection will be used. Collection names may not
- *    start with an underscore.
- * @param {String} key The key under which the value will be stored in
- *    the collection
- * @param {Object} value The value to store. Must be an object or value
- *    that can be converted to JSON. May not be a function or `undefined`.
- * @function
- */
-CWDatastore.set = function(collection, key, value) {
-  //2 args: collection was omitted
-  //exception: (collection, dictionary) - here, value was omitted
-  // if (value === undefined && CWUtil.isObject(key) === false) {
-  //   value = key;
-  //   key = collection;
-  //   collection = undefined;
-  // }
-  // 
-  if (value === undefined) {
-    value = key;
-    key = collection;
-    collection = '_default';
-  }
-
-  this._set(collection, key, value, true, false);
-}.bind(CWDatastore);
-
-
-CWDatastore.setMultiple = function(collection, dict) {
-  if (dict === undefined) {
-    //Args: dict
-    dict = collection;
-    collection = '_default';
-  }
-
-  CWDatastore._set(collection, dict, undefined, true, true);
-}.bind(CWDatastore);
-
-
-/**
- * Stores or updates the given key/value pair in the given collection. The
- *    `sync` parameter allows to suppress syncing to other devices.
- * @param {String} [collection] The collection to write to. If no collection
- *    is provided, a default collection will be used. Collection names may not
- *    start with an underscore.
- * @param {Object} dict An object containing key/value pairs. All of these
- *    will be stored in the given collection. Existing entries will be
- *    overwritten.
- * @param {Boolean} sync=true Determines whether the newly stored value is
- *    synced to other devices. Should almost always be `true`, the only
- *    exception is if we store a value that we received from another device
- *    (to prevent a sync loop)
- * @function
- * @private
- *//**
- * Stores or updates the given key/value pair in the given collection. The
- *    `sync` parameter allows to suppress syncing to other devices.
+ * Stores or updates the given key/value pair in the given collection.
+ *
+ * See {@link CWDatastore.setMultiple} to set multiple values at once.
  * @param {String} [collection] The collection to write to. If no collection
  *    is provided, a default collection will be used. Collection names may not
  *    start with an underscore.
@@ -154,34 +96,73 @@ CWDatastore.setMultiple = function(collection, dict) {
  *    collection
  * @param {Object} value The value to store. Must be an object or value that
  *    can be converted to JSON. May not be a function or `undefined`.
- * @param {Boolean} sync Determines whether the newly stored value is
- *    synced to other devices. Should almost always be `true`, the only
- *    exception is if we store a value that we received from another device
- *    (to prevent a sync loop)
+ * @function
+ */
+CWDatastore.set = function(collection, key, value) {
+  var data = {};
+  data[key] = value;
+  this.setMultiple(collection, data);
+};
+
+
+/**
+ * Stores or updates the given key/value pairs in the given collection. Works
+ *    the same as {@link CWDatastore.set}, but sets multiple values at once.
+ * @param {String} [collection] The collection to write to. If no collection
+ *    is provided, a default collection will be used. Collection names may not
+ *    start with an underscore.
+ * @param {Object} dict An object containing key/value pairs. All of these
+ *    will be stored in the given collection. Existing entries will be
+ *    overwritten.
+ * @function
+ */
+CWDatastore.setMultiple = function(collection, dict) {
+  if (dict === undefined) {
+    //Args: dict
+    dict = collection;
+    collection = undefined;
+  }
+
+  if (collection === undefined) collection = '_default';
+
+  this._set(collection, dict, true);
+};
+
+
+/**
+ * Stores or updates one or more key/value pairs in the given collection. The
+ *    `sync` parameter allows to suppress syncing to other devices.
+ * @param {String} collection The collection to write to.
+ * @param {String} key Can be one of two things:
+ * * A string, representing a key. In this case, the value parameter must be
+ *    the value to store under the given key and the `isDict` parameter must
+ *    be `false`. * A dictionary of key/value pairs. All of these will be
+ *    stored in the given collection. In this case, the value parameter is
+ *    ignored and the `isDict` parameter must be `true`.
+ * @param {Object} value The value to store. Must be an object or value that
+ *    can be converted to JSON. May not be a function or `undefined`. If a
+ *    dictionary is stored, this is not used.
+ * @param {Boolean} sync Determines whether the newly stored value is synced
+ *    to other devices. Should almost always be `true`, the only exception is
+ *    if we store a value that we received from another device (to prevent a
+ *    sync loop)
+ * @param {Boolean} isDict Determines if a single key/value pair or an entire 
+ * @fires _datastorechanged
  * @function
  * @protected
  */
-CWDatastore._set = function(collection, key, value, sync, isDict) {  
+// CWDatastore._set = function(collection, key, value, sync, isDict) {  
+CWDatastore._set = function(collection, data, sync) {  
   //Create collection if it doesn't exist
   if ((collection in this._data) === false) {
     this._data[collection] = {};
   }
 
-  //Create a dictionary of the changes we need to make to the datastore
-  var keyValues;
-  if (isDict) {
-    keyValues = key;
-  } else {
-    //User provided key and new value
-    keyValues = {};
-    keyValues[key] = value; 
-  }
-
   var that = this;
   var reportedChanges = {};
-  $.each(keyValues, function(keyToSet, valueToSet) {
+  $.each(data, function(keyToSet, valueToSet) {
     if (CWUtil.isFunction(valueToSet)) {
-      CWDebug.err('Attempted to store function in CWDatastore (collection: ' + collection + ', key: ' + key + '). This is invalid and will be ignored.');
+      CWDebug.err('Attempted to store function in CWDatastore (collection: ' + collection + ', key: ' + keyToSet + '). This is invalid and will be ignored.');
       return true;
     }
     var oldValue = that._data[collection][keyToSet];
@@ -198,7 +179,7 @@ CWDatastore._set = function(collection, key, value, sync, isDict) {
 
   var reportedCollection = (collection === '_default') ? undefined : collection;
   CWEventManager.trigger('_datastorechanged', reportedCollection, reportedChanges);
-}.bind(CWDatastore);
+};
 
 
 /**
@@ -224,7 +205,7 @@ CWDatastore.get = function(collection, key) {
   }
 
   return this._data[collection][key];
-}.bind(CWDatastore);
+};
 
 
 /**
@@ -237,7 +218,7 @@ CWDatastore.get = function(collection, key) {
  */
 CWDatastore.getCollection = function(collection) {
   return this._getCollection(collection, true);
-}.bind(CWDatastore);
+};
 
 
 /**
@@ -264,28 +245,18 @@ CWDatastore._getCollection = function(collection, returnCopy) {
     this._data[collection] = {};
   }
 
-  if (returnCopy === false) return this._data[collection]
+  if (returnCopy === false) return this._data[collection];
   return $.extend(true, {}, this._data[collection]);
-}.bind(CWDatastore);
+};
 
 
 /**
- * Syncs the entries represented by the given keys in the given collection to
- *    all other currently connected devices.
- * @param  {String} [collection] The collection where the entry is stored. If
- *    omitted, will use the default collection.
- * @param  {Array} keys An array of keys. Each key will be retrieved from the
- *    given collection and synchronized. If a key cannot be found in the given
- *    collection, it is ignored.
- * @function
- * @private
- *//**
  * Syncs the entry represented by the given key in the given collection to all
  *    other currently connected devices.
  * @param  {String} [collection] The collection where the entry is stored. If
  *    omitted, will use the default collection.
- * @param  {String} key They key to retrieve from the collection. If the key
- *    does not exist in the collection, this method will do nothing.
+ * @param  {String} key They keys from the collection to synchronize or an
+ *    array of keys. Keys that do not exist will be ignored.
  * @function
  * @private
  */
@@ -307,7 +278,7 @@ CWDatastore._syncEntrys = function(collection, keys) {
   }); 
 
   Connichiwa.broadcast('_updatedatastore', { data: syncData });
-}.bind(CWDatastore);
+};
 
 /**
  * Syncs the entire data store (all collections) to another device. This
@@ -315,12 +286,14 @@ CWDatastore._syncEntrys = function(collection, keys) {
  *    used with CAUTION!**
  * @param  {String} target A unique device identifies as returned by {@link
  *    CWDevice#getIdentifier}
+ * @param {Function} [callback] An optional callback that is called when the
+ *    datastore was synced to the other device.
  * @function
  * @protected
  */
-CWDatastore._syncStoreToDevice = function(target) {
-  Connichiwa.send(target, '_updatedatastore', { data: this._data });
-}.bind(CWDatastore);
+CWDatastore._syncStoreToDevice = function(target, callback) {
+  Connichiwa.send(target, '_updatedatastore', { data: this._data }, callback);
+};
 /* global CWModules */
 'use strict';
 
@@ -352,13 +325,13 @@ CWDatastore._syncStoreToDevice = function(target) {
  *    however, change the defaults in {@link Connichiwa.event:onLoad}.
  * @namespace CWDebug
  */
-var CWDebug = CWDebug || {};
+var CWDebug = CWModules.retrieve('CWDebug');
 
 
 /**
  * Enables or disables debug logging
  * @type {Boolean}
- * @default [taken from native application]
+ * @default false
  * @private
  */
 CWDebug._debug = false;
@@ -367,7 +340,7 @@ CWDebug._debug = false;
 /**
  * The current log level, see {@link CWDebug.setLogLevel}
  * @type {Number}
- * @default [taken from native application]
+ * @default 0
  * @private
  */
 CWDebug._logLevel = 0;
@@ -383,7 +356,7 @@ CWDebug.__constructor = function() {
   //TODO: We might want to think about if Ractive.DEBUG should be set to
   //CWDebug._debug
   Ractive.DEBUG = false;
-}.bind(CWDebug);
+};
 
 
 /**
@@ -396,7 +369,7 @@ CWDebug.__constructor = function() {
 CWDebug._setDebugInfo = function(info) {
   if (info.debug)    CWDebug.setDebug(info.debug);
   if (info.logLevel) CWDebug.setLogLevel(info.logLevel);
-}.bind(CWDebug);
+};
 
 
 /**
@@ -408,7 +381,7 @@ CWDebug._setDebugInfo = function(info) {
  */
 CWDebug._getDebugInfo = function() {
   return { debug: this._debug, logLevel: this._logLevel };
-}.bind(CWDebug);
+};
 
 
 /**
@@ -427,7 +400,7 @@ CWDebug.log = function(level, msg) {
   if (this._debug && level <= this._logLevel) {
     console.log(level + '|' + msg);
   }
-}.bind(CWDebug);
+};
 
 
 /**
@@ -439,7 +412,7 @@ CWDebug.err = function(msg) {
   if (this._debug) {
     console.err(msg);
   }
-}.bind(CWDebug);
+};
 
 /**
  * Enables or disables debugging output
@@ -449,7 +422,7 @@ CWDebug.err = function(msg) {
  */
 CWDebug.setDebug = function(v) {
   this._debug = v;
-}.bind(CWDebug);
+};
 
 /**
  * Sets the log level. Can be a number from 0 to 5, whereas 0 means that no
@@ -461,9 +434,7 @@ CWDebug.setDebug = function(v) {
  */
 CWDebug.setLogLevel = function(v) {
   this._logLevel = v;
-}.bind(CWDebug);
-
-CWModules.add('CWDebug');
+};
 /* global Connichiwa, CWSystemInfo, CWUtil */
 'use strict';
 
@@ -472,7 +443,7 @@ CWModules.add('CWDebug');
 
 /**
  * Constructs a new device with the given properties. **You should never
- *    constructor a CWDevice yourself**
+ *    construct a CWDevice yourself**
  * @param {Object} properties The device's reported properties that will be
  *    part of the CWDevice
  * @constructor
@@ -597,12 +568,26 @@ function CWDevice(properties)
    */
   this._ppi = CWSystemInfo.DEFAULT_PPI;
 
-  if (properties.launchDate) this._launchDate = properties.launchDate;
-  if (properties.ips) this._ips = properties.ips;
-  if (properties.port) this._port = properties.port;
-  if (properties.name) this._name = properties.name;
-  if (properties.ppi && properties.ppi > 0) this._ppi = properties.ppi;
+  this._setProperties(properties);
 }
+
+
+/**
+ * Sets the device properties given in the properties object to the given
+ *    values. Note that the device's identifier is immutable and cannot be set
+ *    using this method.
+ * @param {Object} properties An object containing key/value pairs with
+ *    properties to set
+ * @function
+ * @protected
+ */
+CWDevice.prototype._setProperties = function(properties) {
+  if (properties.launchDate)  this._launchDate = properties.launchDate;
+  if (properties.ips)         this._ips = properties.ips;
+  if (properties.port)        this._port = properties.port;
+  if (properties.name)        this._name = properties.name;
+  if (properties.ppi && properties.ppi > 0) this._ppi = properties.ppi;
+};
 
 
 //
@@ -804,11 +789,7 @@ CWDevice.prototype._replace = function(target, html, contentOnly) {
  */
 CWDevice.prototype.loadScript = function(url, callback) {
   var message = { url : url };
-  var messageID = this.send('_loadscript', message);
-
-  if (callback !== undefined) {
-    Connichiwa.on('__ack_message' + messageID, callback);
-  }
+  var messageID = this.send('_loadscript', message, callback);
 };
 
 
@@ -862,13 +843,17 @@ CWDevice.prototype.loadTemplates = function(paths) {
  *    DOM. This means that within this callback, you can be sure the content
  *    of the template exists in the remote DOM.
  */
-CWDevice.prototype.insertTemplate = function(templateName, target, data, callback) {
-  var message = { templateName: templateName, target: target, data: data };
-  var messageID = this.send('_inserttemplate', message);
+// CWDevice.prototype.insertTemplate = function(templateName, target, data, callback) {
+CWDevice.prototype.insertTemplate = function(templateName, options) {
+  if (options === undefined) options = {};
+  var onComplete = options.onComplete;
 
-  if (callback !== undefined) {
-    Connichiwa.on('__ack_message' + messageID, callback);
-  }
+  //Remove onComplete from options, we don't want to send that to the device
+  //Instead, we pass onComplete as the callback to .send()
+  options.onComplete = undefined;
+
+  var message = { templateName: templateName, options: options };
+  var messageID = this.send('_inserttemplate', message, onComplete);
 };
 
 /**
@@ -885,12 +870,14 @@ CWDevice.prototype.insertTemplate = function(templateName, target, data, callbac
  *    JSON.stringify. The object may not contain keys starting with an
  *    underscore. The message will be passed to the message event on the
  *    remote device.
+ * @param {Function} [callback] An optional callback that is called once we
+ *    received the acknowledgment that the message was received by the device
  */
-CWDevice.prototype.send = function(name, message) {
+CWDevice.prototype.send = function(name, message, callback) {
   message._name = name;
   message._source = Connichiwa.getIdentifier();
   message._target = this.getIdentifier();
-  return Connichiwa._sendObject(message);
+  return Connichiwa._sendObject(message, callback);
 };
 
 
@@ -1047,7 +1034,7 @@ CWDevice.ConnectionState = {
  * @namespace  CWEventManager
  * @protected
  */
-var CWEventManager = CWEventManager || {};
+var CWEventManager = CWModules.retrieve('CWEventManager');
 
 
 /**
@@ -1086,7 +1073,97 @@ CWEventManager.register = function(event, callback) {
   if (!this._callbacks[event]) this._callbacks[event] = [];
   this._callbacks[event].push(callback);
   CWDebug.log(3, 'Attached callback to ' + event);
-}.bind(CWEventManager);
+};
+
+
+/**
+ * Removes all callbacks from the given event. No callbacks for that event
+ *    will be triggered anymore.
+ * @param  {String}   eventName The event name to remove events from.
+ * @function
+ * @protected
+ *//**
+ * Removes the given callback from every possible event. The callback will
+ *    not be triggered anymore.
+ * @param  {Function} callback  The callback to remove. This function will be
+ *    removed from every event it has been registered for.
+ * @function
+ * @protected
+ *//**
+ * Removes the given callback from the given event. The
+ *    callback will not be triggered for that event anymore.
+ * @param  {String}   eventName The event to remove the callback from
+ * @param  {Function} callback  The callback function to remove
+ * @function
+ * @protected
+ */
+CWEventManager.unregister = function(event, callback) {
+  //If .unregister() is called within an event callback, we would unregister
+  //an event that is currently looped over by .trigger()
+  //Therefore, move .unregister() to the next run loop
+  var that = this;
+  window.setTimeout(function() {
+    if (callback === undefined) {
+      if (CWUtil.isFunction(event)) {
+        //Only callback was given
+        callback = event;
+        event = undefined;
+      }
+    }
+
+    if (event !== undefined) {
+      event = event.toLowerCase();
+
+      //Event can be a space-seperated list of event names
+      if (event.indexOf(' ') !== -1) {
+        var events = event.split(' ');
+        for (var i = 0; i < events.length; i++) {
+          CWEventManager.unregister(events[i], callback);
+        }
+        return;
+      }
+
+      if (callback === undefined) {
+        //If only an event was given, we remove all callbacks from this event
+        if (event in that._callbacks) {
+          that._callbacks[event] = undefined;
+          CWDebug.log(3, 'Detached ALL callbacks from ' + event);
+        }
+        return;
+      } else {
+        //If an event and a callback were given, only the given callback attached to
+        //the given event will be removed
+        if (event in that._callbacks) {
+          var i = 0;
+          $.each(that._callbacks[event], function(index, value) {
+            if (value === callback) {
+              that._callbacks[event].splice(index, 1);
+              i++;
+            }
+          });
+          CWDebug.log(3, 'Detached ' + i + ' callbacks from ' + event);
+          return;
+        }
+      }
+    }
+
+    //If only a callback was given, we search through all events and remove all
+    //callbacks with the given function
+    if (event === undefined && callback !== undefined) {
+      $.each(that._callbacks, function(eventName) {
+        var i = 0;
+        $.each(that._callbacks[eventName], function(index, value) {
+          if (value === callback) {
+            that._callbacks[eventName].splice(index, 1);
+            i++;
+          }
+        });
+
+        CWDebug.log(3, 'Detached ' + i + ' callbacks from ' + eventName);
+      });
+    }
+  }, 0);
+};
 
 
 /**
@@ -1132,9 +1209,7 @@ CWEventManager.trigger = function(logPrio, event, var_args) {
     var callback = this._callbacks[event][i];
     callback.apply(null, args); //calls the callback with arguments args
   }
-}.bind(CWEventManager);
-
-CWModules.add('CWEventManager');
+};
 /* global CWEventManager, CWVector, CWUtil, CWDebug, CWModules */
 'use strict';
 
@@ -1147,7 +1222,7 @@ CWModules.add('CWEventManager');
  * @namespace CWGestures
  * @private
  */
-var CWGestures = CWGestures || {};
+var CWGestures = CWModules.retrieve('CWGestures');
 
 
 /**
@@ -1209,7 +1284,7 @@ CWGestures.__constructor = function() {
   $(document).ready(function() {
     that._captureOn($('body'));
   });
-}.bind(CWGestures);
+};
 
 
 /**
@@ -1221,7 +1296,7 @@ CWGestures.__constructor = function() {
  */
 CWGestures._onDown = function(e) {
   this._touchStart = CWUtil.getEventLocation(e, 'client');
-}.bind(CWGestures);
+};
 
 
 /**
@@ -1294,7 +1369,7 @@ CWGestures._onMove = function(e) {
   } 
 
   this._touchLast = newTouch;
-}.bind(CWGestures);
+};
 
 
 /**
@@ -1393,7 +1468,7 @@ CWGestures._onUp = function(e) {
     y    : swipeEnd.y
   };
   CWEventManager.trigger("stitchswipe", swipeData);
-}.bind(CWGestures);
+};
 
 
 /**
@@ -1418,12 +1493,7 @@ CWGestures._captureOn = function(el) {
   //el.on("mouseup touchend", this._onUp);
   el.addEventListener("mouseup",  this._onUp, true);
   el.addEventListener("touchend", this._onUp, true);
-}.bind(CWGestures);
-
-//Initalize module. Delayed call to make sure all modules are ready
-if (CWGestures.__constructor) window.setTimeout(CWGestures.__constructor, 0);
-
-CWModules.add('CWGestures');
+};
 /* global gyro, CWEventManager, CWModules */
 'use strict';
 
@@ -1464,7 +1534,7 @@ CWModules.add('CWGestures');
  *    events.
  * @namespace CWGyroscope
  */
-var CWGyroscope = CWGyroscope || {};
+var CWGyroscope = CWModules.retrieve('CWGyroscope');
 
 
 /**
@@ -1492,13 +1562,12 @@ CWGyroscope._alphaGammaFlipped = false;
  * @private
  */
 CWGyroscope.__constructor = function() {
-  gyro.frequency = 500;
-  gyro.startTracking(this._onUpdate.bind(this));    
-
   //TODO we should only start tracking if necessary
   //necessary for now means the device has been stitched
   //but how do we best figure that out?
-}.bind(CWGyroscope);
+  gyro.frequency = 500;
+  gyro.startTracking(this._onUpdate.bind(this)); 
+};
 
 
 /**
@@ -1569,7 +1638,7 @@ CWGyroscope._onUpdate = function(o) {
 
   //We need to copy the values of o because o will be altered by gyro
   this._lastMeasure = { x: o.x, y: o.y, z: o.z, alpha: alpha, beta: beta, gamma: gamma };
-}.bind(CWGyroscope);
+};
 
 
 /**
@@ -1585,7 +1654,7 @@ CWGyroscope.getLastGyroscopeMeasure = function() {
     beta  : this._lastMeasure.beta,
     gamma : this._lastMeasure.gamma
   };
-}.bind(CWGyroscope);
+};
 
 
 /**
@@ -1602,9 +1671,7 @@ CWGyroscope.getLastAccelerometerMeasure = function() {
     y : this._lastMeasure.y,
     z : this._lastMeasure.z
   };
-}.bind(CWGyroscope);
-
-CWModules.add('CWGyroscope');
+};
 /* global CWEventManager, CWStitchManager */
 'use strict';
 
@@ -2285,7 +2352,7 @@ CWLocation.fromSize = function(width, height, isLocal) {
  * @namespace CWNativeBridge
  * @protected
  */
-var CWNativeBridge = CWNativeBridge || {};
+var CWNativeBridge = CWModules.retrieve('CWNativeBridge');
 
 
 /**
@@ -2303,15 +2370,10 @@ CWNativeBridge._runsNative = false;
  * @private
  */
 CWNativeBridge.__constructor = function() {
-  // if (Connichiwa.isMaster()) {
-    // console.log("runsNative true")
-    // this._runsNative = true;
-  // } else {
-    if (window.RUN_BY_CONNICHIWA_NATIVE === true) {
-      this._runsNative = true;
-    } 
-  // }
-}.bind(CWNativeBridge);
+  if (window._CW_NATIVE !== undefined) {
+    this._runsNative = true;
+  } 
+};
 
 
 /**
@@ -2323,7 +2385,7 @@ CWNativeBridge.__constructor = function() {
  */
 CWNativeBridge.isRunningNative = function() {
   return (this._runsNative === true);
-}.bind(CWNativeBridge);
+};
 
 
 /**
@@ -2349,7 +2411,7 @@ CWNativeBridge.callOnNative = function(methodName) {
   } else { 
     CWDebug.log(1, 'ERROR: Tried to call native method with name ' + methodName + ', but it doesn\'t exist!');
   }
-}.bind(CWNativeBridge);
+};
 
 
 /**
@@ -2362,9 +2424,42 @@ CWNativeBridge.callOnNative = function(methodName) {
  * @protected
  */
 CWNativeBridge.parse = function(message) { /* ABSTRACT */ };
+/* global CWModules, CWNativeBridge */
+'use strict';
 
 
-CWModules.add('CWNativeBridge');
+/**
+ * Manages the proximity sensor of the device, if present. Requires an iOS
+ *    native layer to work. After calling {@link CWProximity.startTracking},
+ *    this class sends {@link event:proximityStateChanged} events to your
+ *    application that indicate if the proximity sensor of the device is
+ *    occluded or not. Note that on iOS, enabling the proximity sensor
+ *    automatically turns of the device screen as soon as the sensor is
+ *    occluded. To stop tracking call {@link CWProximity.stopTracking}.
+ * @namespace CWProximity
+ */
+var CWProximity = CWModules.retrieve('CWProximity');
+
+
+/**
+ * Enables proximity sensor tracking. Note that on iOS, after calling this
+ *    method, the screen will turn of when the proximity sensor is occluded.
+ *    After calling this method, your application will receive {@link
+ *    event:proximityStateChanged} events whenever the proximity sensor state
+ *    changes.
+ */
+CWProximity.startTracking = function() {
+  CWNativeBridge.callOnNative('nativeCallStartProximityTracking');
+};
+
+
+/**
+ * Disables proximity sensor tracking. Your application will no longer receive
+ *    {@link event:proximityStateChanged} events.
+ */
+CWProximity.stopTracking = function() {
+  CWNativeBridge.callOnNative('nativeCallStopProximityTracking');
+};
 /* global Connichiwa, CWGyroscope, CWSystemInfo, CWUtil, CWModules */
 'use strict';
 
@@ -2404,7 +2499,7 @@ CWModules.add('CWNativeBridge');
  *    current device transformation
  * @namespace CWStitchManager
  */
-var CWStitchManager = CWStitchManager || {};
+var CWStitchManager = CWModules.retrieve('CWStitchManager');
 
 
 /**
@@ -2466,7 +2561,7 @@ CWStitchManager.__constructor = function() {
   Connichiwa.on('wasUnstitched',       this._onWasUnstitched);
   Connichiwa.on('gyroscopeUpdate',     this._onGyroUpdate);
   Connichiwa.on('accelerometerUpdate', this._onAccelerometerUpdate);
-}.bind(CWStitchManager);
+};
 
 
 /**
@@ -2481,7 +2576,7 @@ CWStitchManager._onWasStitched = function(message) {
   this._isStitched = true;
 
   //TODO register for gyroscopeUpdate instead of in constructor
-}.bind(CWStitchManager);
+};
 
 
 /**
@@ -2496,7 +2591,7 @@ CWStitchManager._onWasUnstitched = function(message) {
   this._isStitched = false;
 
   //TODO unregister from gyroscopeUpdate
-}.bind(CWStitchManager);
+};
 
 
 /**
@@ -2510,7 +2605,7 @@ CWStitchManager._onLocalSwipe = function(swipeData) {
   swipeData.width  = CWSystemInfo.viewportWidth();
   swipeData.height = CWSystemInfo.viewportHeight();
   Connichiwa.send('master', '_stitchswipe', swipeData);
-}.bind(CWStitchManager);
+};
 
 
 /**
@@ -2547,7 +2642,7 @@ CWStitchManager._onGyroUpdate = function(gyroData) {
       (CWUtil.inArray('gamma', this.ignoreMoveAxis) === false && deltaGamma >= 20)) {
     this._quitStitch();
   }
-}.bind(CWStitchManager);
+};
 
 
 /**
@@ -2579,7 +2674,7 @@ CWStitchManager._onAccelerometerUpdate = function(accelData) {
       (CWUtil.inArray('z', this.ignoreMoveAxis) === false && z >= 1.0)) {
     this._quitStitch();
   }
-}.bind(CWStitchManager);
+};
 
 
 /**
@@ -2590,7 +2685,7 @@ CWStitchManager._onAccelerometerUpdate = function(accelData) {
 CWStitchManager._quitStitch = function() {
   var data = { device : Connichiwa.getIdentifier() };
   Connichiwa.send('master', '_quitstitch', data);
-}.bind(CWStitchManager);
+};
 
 
 /**
@@ -2602,7 +2697,7 @@ CWStitchManager._quitStitch = function() {
  */
 CWStitchManager.unstitch = function() {
   this._quitStitch();
-}.bind(CWStitchManager);
+};
 
 
 /**
@@ -2612,7 +2707,7 @@ CWStitchManager.unstitch = function() {
  */
 CWStitchManager.isStitched = function() {
   return this._isStitched;
-}.bind(CWStitchManager);
+};
 
 
 /**
@@ -2628,7 +2723,7 @@ CWStitchManager.getLocalDeviceTransformation = function() {
   }
   
   return this._deviceTransformation;
-}.bind(CWStitchManager);
+};
 
 
 /**
@@ -2648,10 +2743,7 @@ CWStitchManager.getDefaultDeviceTransformation = function() {
     rotation : 0, 
     scale    : 1.0 
   };
-}.bind(CWStitchManager);
-
-
-CWModules.add('CWStitchManager');
+};
 /* global CWModules */
 'use strict';
 
@@ -2663,7 +2755,7 @@ CWModules.add('CWStitchManager');
  *    the browser window resolution or the orientation
  * @namespace CWSystemInfo
  */
-var CWSystemInfo = CWSystemInfo || {};
+var CWSystemInfo = CWModules.retrieve('CWSystemInfo');
 
 
 /**
@@ -2671,7 +2763,7 @@ var CWSystemInfo = CWSystemInfo || {};
  * @type {Number}
  * @const
  */
-CWSystemInfo.DEFAULT_PPI = 100; //HD on a 22'' monitor
+CWSystemInfo.DEFAULT_PPI = 100; //1080p on a 22'' monitor
 
 
 /**
@@ -2709,7 +2801,7 @@ CWSystemInfo.PPI = function() {
   }
 
   return ppi;
-}.bind(CWSystemInfo);
+};
 
 
 /**
@@ -2720,7 +2812,7 @@ CWSystemInfo.PPI = function() {
  */
 CWSystemInfo.isLandscape = function() {
   return (window.innerHeight < window.innerWidth);
-}.bind(CWSystemInfo);
+};
 
 
 /**
@@ -2730,7 +2822,7 @@ CWSystemInfo.isLandscape = function() {
  */
 CWSystemInfo.viewportWidth = function() {
   return $(window).width();
-}.bind(CWSystemInfo);
+};
 
 
 /**
@@ -2744,71 +2836,134 @@ CWSystemInfo.viewportHeight = function() {
   //This seems to break in landscape when using meta-viewport 
   //height-device-height so basically for now: don't use that
   return $(window).height();
-}.bind(CWSystemInfo);
-
-CWModules.add('CWSystemInfo');
-/* global Connichiwa, Ractive, CWDatastore, CWUtil, CWDebug, CWModules */
+};
+/* global Connichiwa, CWDevice, CWDeviceManager, Ractive, CWDatastore, CWUtil, CWDebug, CWModules */
 'use strict';
 
 /**
  * Provides cross-device templating in Connichiwa.
  *
- * CWTemplates allows you to write Mustache ({@link
- *    https://mustache.github.io}) templates and insert them into the DOM of a
+ * CWTemplates allows you to write Ractive.js ({@link
+ *    http://www.ractivejs.org}) templates and insert them into the DOM of a
  *    local or remote device. Mustache templates support *expressions* that
- *    can be replaced with content at runtime.
+ *    can be dynamically replaced with content at runtime.
+ *
+ * #### Creating a template
+ *
+ * Templates are stored in external files. Technically, any extension is
+ *    exceptable, but `.html` is preferred. One file can contain one or more
+ *    templates. Each template must be surrounded by a `<template>` tag that
+ *    must have a name attribute with a unique name:
+ *
+ * ```html
+ * <template name="myTemplate">
+ * 
+ * <!-- template content goes here --&gt;
+ *
+ * </template>
+ * ```
+ *
+ * Templates can contain any kind of ordinary HTML but can further contain
+ *    *expressions*. Expressions can be if-else constructs, loops but most
+ *    commonly are used as variables - placeholders where dynamic content is
+ *    inserted using JavaScript. To learn about all the possibilities of
+ *    Ractive.js templates, have a look at {@link
+ *    http://docs.ractivejs.org/latest/}.
+ *
+ * #### Using a template
+ *
+ * Once you created a file that contains one or multiple templates, there are
+ *    two steps required to make use of the template:
+ *
+ * 1. **Load the template**: This will download the template file from the
+ *    server and parse it. This step makes all containing templates known to
+ *    the system. Loading a template is done using {@link CWTemplates.load}:  
+ *      
+ *    ```js
+ *    CWTemplates.load('templates.html');
+ *    ```
+ *
+ * 2. **Insert the template**: After loading a template file, you can insert
+ *    any template it contains into the DOM using {@link CWTemplates.insert}:  
+ *      
+ *    ```js
+ *    CWTemplates.insert('myTemplate');
+ *    ```
+ *
+ * By default, templates are appended to the body of your device. You can
+ *    specify an alternative target and further configure the insertion. Have
+ *    a look at {@link CWTemplates.insert} for possible options.
+ *
+ * To **insert a template on another device** the same procedure is used. Just
+ *    pass a device identifier or a {@link CWDevice} object as the first
+ *    parameter to **both** {@link CWTemplates.load} and {@link
+ *    CWTemplates.insert}.
+ *
+ * #### Expressions
+ *
+ * Besides ordinary HTML, templates in Connichiwa can contain *expressions*.
+ *    Expressions always start with two opening curly brackets and end with
+ *    two closing curly brackets. Most commonly, expressions are used as
+ *    placeholders for dynamic content. For example:
+ *
+ * ```html
+ * <h2>Hello, {{name}}!</h2>
+ * ```
+ *
+ * The expression in this example is `{{name}}`. In your JavaScript, you can
+ *    use {@link CWTemplates.set} to replace such expressions with content:
+ *
+ * ```js
+ * CWTemplates.set('name', 'Paul');
+ * ```
+ *
+ * The template will notice that the expression `{{name}}` changed and
+ *    automatically update the UI to reflect the change, displaying `Hello,
+ *    Paul!` in the heading.
+ *
+ * Expressions can be redefined at any time. Calling `CWTemplates.set('name',
+ *    'John')` at a later point will automatically replace "Paul" with "John"
+ *    in your UI.
  *
  * #### Data-driven templates
  *
- * For example, if a template contains the line `Hello, {{name}}!` the
- *    expression is `{{name}}` You can replace it at runtime using {@link
- *    CWTemplates.set} - e.g. `CWTemplates.set('name', 'Paul')` will change
- *    the DOM to `Hello, Paul!`. At some point later you can call
- *    `CWTemplates.set('name', 'John')` and the DOM will be automatically
- *    reflect the change and display `Hello, John!`
- *
  * As you can see, Connichiwas templates are *data-driven* - you do not
- *    directly manipulate the DOM, but rather manipulate the data which will
- *    be automatically reflected in your UI. Connichiwa even sweetens that
- *    further by syncing your data across devices. So if a template on one
- *    device contains the expression `{{name}}`, and the same or another
- *    template on another device contains that expression as well, using
- *    `CWTemplates.set('name', 'Paul')` will change that expression on **all**
- *    your devices.
+ *    directly manipulate the DOM, but rather manipulate the data behind your
+ *    templates. Connichiwa even sweetens that further by syncing your data
+ *    across devices. So if a template on one device contains the expression
+ *    `{{name}}`, and a template on another device contains that expression as
+ *    well, using {@link CWTemplates.set} will affect your UI on **all** your
+ *    devices.
  *
- * What if you have a template that contains the `{{name}}` expression and
- *    want it to show a different name? Here is where data collections come
- *    into play: When inserting the template into the DOM, you can define the
- *    name of a data collection that will be used for that template. So your
- *    template could do something like:
+ * There are cases, though, where this behaviour is unwanted - for example, if
+ *    you want to reuse a template on multiple devices, but fill it with
+ *    different data. To achieve this, you can provide the name of a
+ *    sub-datastore when inserting the template. In the same manner, you can
+ *    set data of a sub-datastore by passing the `collection` parameter to
+ *    {@link CWTemplates.set}. By default, all templates take their data from
+ *    the main template collection. If you provide the name of a sub
+ *    collection, your template will react only to data changes in that
+ *    collection. For example, you can insert a template as such:
  *
- * `CWTemplates.insert('myTemplate', 'body', 'customCollection')`
+ * ```js
+ * CWTemplates.insert('greeting', { dataSource: 'myCollection'});
+ * ```
  *
- * Now, if some device calls `CWTemplates.set('name', 'Paul')` the new
- *    template will not be affected! Instead, you can set the name of that
- *    template using `CWTemplates.set('customCollection', 'name', 'Michael')`.
- *    So you can have multiple templates with the same expression, but use
- *    different data!
+ * This template will not be affected when you use `CWTemplates.set('name',
+ *    'Paul')`. Instead, you must call the following to set the name for this
+ *    template:
  *
- * #### How to insert a template?
+ * ```js
+ * CWTemplates.set('myCollection', 'name', 'Paul');
+ * ```
  *
- * Templates are stored in external files with arbitrary extension
- *    (preferrably `.html`, as this enables syntax highlighting). A template
- *    consists of a template tag and needs a name:
- *
- * `<template name="myTemplate"> ... </template>`
- *
- * A file can contain multiple templates. To use one or more templates, you
- *    must first load the file that contains them using {@link
- *    CWTemplates.load}. You can then start to insert templates into your DOM
- *    using {@link CWTemplates.insert}. To replace your template expressions
- *    (such as `{{name}}`) with actual data, use {@link CWTemplates.set}.
- *    That's all there is to it.
+ * As you can see, you defined a collection name when inserting the template,
+ *    and you have to set data for the same collection to affect the template.
  * @copyright This class and the whole idea behind CWTemplates is based on
  *    Roman Rädle's work (roman.raedle@uni-konstanz.de).
  * @namespace  CWTemplates
  */
-var CWTemplates = CWTemplates || {};
+var CWTemplates = CWModules.retrieve('CWTemplates');
 
 /**
  * An array where every entry represents one template-file loading attempt.
@@ -2867,20 +3022,48 @@ CWTemplates.__constructor = function() {
       });
     }
   });
-}.bind(CWTemplates);
+};
 
 
 /**
  * Loads one or more files containing templates. Templates that have been
  *    loaded can then be inserted into the DOM using {@link
  *    CWTemplates.insert}.
+ * @param {CWDevice|String} [device] The device where to load the template,
+ *    either represented by a CWDevice or by a device's unique identifier
+ *    string. If omitted, the template is loaded on the local device.
  * @param  {String|Array} paths The path to a template file or an array of
- *    paths. If one or more paths are invalid, that particular load will fail, but all other paths will still be loaded.
+ *    paths. If one or more paths are invalid, that particular load will fail,
+ *    but all other paths will still be loaded.
  * @function
  */
-CWTemplates.load = function(paths) {
+CWTemplates.load = function(device, paths) {
+  if (paths === undefined) {
+    //Args: paths
+    paths = device;
+    device = undefined;
+  }
+
+  // if (CWDevice.prototype.isPrototypeOf(device) === true) {
+    // device = device.getIdentifier();
+  // }
+  // 
+  //TODO
+  if (CWUtil.isString(device)) {
+    device = CWDeviceManager.getDeviceWithIdentifier(device);
+  }
+  //TODO
+
   if (CWUtil.isString(paths)) paths = [ paths ];
 
+  //If a device was given, use device.loadTemplates()
+  if (device !== undefined) {
+    device.loadTemplates(paths);
+    return;
+  } 
+
+  //If we want to load something on this device, let's do that now
+  //Download the file & compile it
   var that = this;
   $.each(paths, function(i, path) {
     //Don't load files twice
@@ -2900,63 +3083,82 @@ CWTemplates.load = function(paths) {
       deferred.reject();
     });
   });
-}.bind(CWTemplates);
+};
 
 
  /**
-  * Inserts the template with the given name into the local DOM. The template
-  *    will be inserted into the DOM object(s) with the given target selector.
+  * Inserts the template with the given name into the given device's DOM.
   *
-  * The expressions in your templates (such as `{{name}}`) will be replaced
-  *    with data from the *template data store*. The template data store is
-  *    the data source that provides data to your UI, and you can insert data
-  *    using {@link CWTemplates.set}. For example, `{{name}}` will be replaced
-  *    by whatever value was set using `CWTemplates.set('name', ...)`.
-  *
-  * Connichiwa synchronizes your template data store across all your devices,
-  *    so all your devices access the same underlying data - this ensures that
-  *    your UI is consistent across multiple devices. So, if you insert a
-  *    template on a remote device that contains the `{{name}}` expression,
-  *    using `CWTemplates.set('name', ...)` on **any** device will update your
-  *    UI.
-  *
-  * If you have the same expression in multiple templates, but want to feed
-  *    different data to the templates, you can provide a collection name
-  *    using the `data` attribute. By default, all templates take their data
-  *    from the main collection. If you specify the name of a collection in
-  *    the `data` attribute, your template will react only to changes in that
-  *    particular collection. For example, if you insert a template using
-  *    `CWTemplates.insert('myTemplate', 'body', 'myCollection')`, calling
-  *    `CWTemplates.set('name', 'Paul')` will not affect the template.
-  *    Instead, you must call `CWTemplates.set('myCollection', 'name',
-  *    'Paul')` to update your template UI. This way, you can have the same
-  *    expression multiple times but use different data.
-  *
-  * Note that insertion is an asynchronous operation, an optional callback
-  *    can be provided and will be called when the insertion finished.
+  * Note that insertion is an asynchronous operation. If you want to execute
+  *    code after the template has inserted, use the `onComplete` option to
+  *    provide a callback.
   *
   * Note that before you can insert a template, you must load the file that
   *    contains this template using {@link CWTemplates.load}. If your template
   *    contains subtemplates (using the `{{> subtemplate}}` notation), the
   *    files containing the subtemplate must have been loaded as well.
+  * @param {CWDevice|String} [device] The device where to insert the template,
+  *    either represented by a CWDevice or by a device's unique identifier
+  *    string. If omitted, the template is inserted on the local device's DOM.
   * @param  {String}   templateName The name of the template to load. The file
   *    that contains a template with this name must be loaded using {@link
   *    CWTemplates.load} before calling this method.
-  * @param  {String}   target       A jQuery selector that points to a valid
-  *    DOM object (e.g. 'body'). The template will be inserted into this DOM
-  *    element.
-  * @param  {Object}   data         If undefined, the default template data
-  *    store (that can be written using `CWTemplate.set(key, value)`) is fed
-  *    to the template. If set to a string, the template data store of that
-  *    name is fed to the template (which can be written using
-  *    `CWTemplates.set('storeName', key, value)`). If set to an object
-  *    literal, the static data from the object is fed to the template - the
-  *    template is then rendered static.
-  * @param  {Function} [callback]     An optional callback function. This
-  *    callback will be called after the template was inserted into the DOM.
+  * @param  {Object}   options Options that configures the insertion. All
+  *    settings are optional. The following options are available:
+  *
+  * * **target** (default: `'body'`)  
+  *     
+  *   A jQuery selector that represents a DOM element on the target device. The
+  *    template is inserted into the DOM element(s) represented by this
+  *    selector.
+  *
+  * * **dataSource**
+  *     
+  *   By default, the template data comes from the default template data store
+  *    (see {@link CWTemplates.set}). If `dataSource` is set to a String, a
+  *    sub-datastore with the given name will be used. So if you set this to
+  *    `'foo'`, the template will react only to changes in the foo template
+  *    data store (set using `CWTemplates.set('foo', key, value)`). If this is
+  *    set to an object, the template will use the data from the object.
+  *    Therefore, the template will be static and not react to changes in the
+  *    datastore.
+  *
+  * * **onComplete**
+  *     
+  *   A callback function that is executed if the template has been inserted.
   * @function
  */
-CWTemplates.insert = function(templateName, target, data, callback) {
+CWTemplates.insert = function(device, templateName, options) {
+  if (templateName === undefined) {
+    //Args: templateName
+    templateName = device;
+    device = undefined;
+  } else if (CWUtil.isObject(templateName) && options === undefined) {
+    //Args: templateName, options
+    options = templateName;
+    templateName = device;
+    device = undefined;
+  }
+
+  if (options === undefined) options = {};
+
+  //TODO
+  if (CWUtil.isString(device)) {
+    device = CWDeviceManager.getDeviceWithIdentifier(device);
+  }
+  //TODO
+
+  //Inserting into remote DOM - relay method call to CWDevice
+  if (device !== undefined) {
+    device.insertTemplate(templateName, options);
+    return;
+  }
+
+  var target     = options.target || 'body';
+  var dataSource = options.dataSource;
+  var onComplete = options.onComplete;
+
+  //Inserting into local DOM
   var that = this;
   $.when.all(this._files).always(function() {
     CWDebug.log(3, "Inserting template " + templateName + " into DOM");
@@ -2967,12 +3169,12 @@ CWTemplates.insert = function(templateName, target, data, callback) {
     //* If data is an object literal, we use its content as static data and do
     //  not use the data store at all (=not reactive)
     var ractiveData;
-    if (data === undefined) {
+    if (dataSource === undefined) {
       ractiveData = CWDatastore._getCollection('_CWTemplates.', false);
-    } else if (CWUtil.isString(data)) {
-      ractiveData = CWDatastore._getCollection('_CWTemplates.'+data, false);
-    } else if (CWUtil.isObject(data)) {
-      ractiveData = data;
+    } else if (CWUtil.isString(dataSource)) {
+      ractiveData = CWDatastore._getCollection('_CWTemplates.' + dataSource, false);
+    } else if (CWUtil.isObject(dataSource)) {
+      ractiveData = dataSource;
     }
 
     var ractive = new Ractive({ 
@@ -2984,40 +3186,53 @@ CWTemplates.insert = function(templateName, target, data, callback) {
     });
     that._templates.compiled.push(ractive); 
 
-    if (callback !== undefined) callback();
+    if (onComplete !== undefined) onComplete();
   });
-}.bind(CWTemplates);
+};
 
 
 /**
  * Writes the given data to the template data store. This method is the main
- *    mechanism to change the underlying data of templates. For example, if a
- *    template contains the expression `{{title}}`, this expression will
- *    always be replaced with the current value of the title key in the
- *    template data store.
+ *    mechanism to change the underlying data of templates.
  *
- * Be aware that data set using this method is synchronized across all your
- *    devices. Therefore, you can update the DOM on multiple devices with a
- *    single call to this method.
- * @param {String} [collection] An optional collection name. Collections can
- *    be thought of as "sub data stores". Using collections, you can insert
- *    multiple templates with the same expression, but have them display
- *    different data (also see {@link CWTemplates.insert}). If omitted, writes
- *    to the main collection. Collection names may not start with an
- *    underscore.
- * @param {Object} dict A dictionary of key/value pairs. Every pair will be
- *    inserted into the given collection. Existing keys will be overwritten.
- * @function
- *//**
- * Writes the given data to the template data store. This method is the main
- *    mechanism to change the underlying data of templates. For example, if a
- *    template contains the expression `{{title}}`, this expression will
- *    always be replaced with the current value of the title key in the
- *    template data store.
+ * The expressions in your templates will be replaced by values with the same
+ *    key in the template data store. For example, the expression `{{name}}` will be replaced by
+ *    whatever value was set using:
+ *    
+ *    ```js
+ *    CWTemplates.set('name', value);
+ *    ```
  *
- * Be aware that data set using this method is synchronized across all your
- *    devices. Therefore, you can update the DOM on multiple devices with a
- *    single call to this method.
+ * Connichiwa synchronizes your template data store across all your devices,
+ *    this ensures that your UI is consistent across all devices. So, if you
+ *    insert a template on a remote device that contains the `{{name}}`
+ *    expression, using `CWTemplates.set('name', ...)` on **any** device will
+ *    update your UI on **all** devices.
+ *
+ * There are cases, though, where this behaviour is not wanted - for example,
+ *    if you want to reuse a template on multiple devices, but fill it with
+ *    different data. To achieve this, you can provide the name of a
+ *    sub-datastore when inserting the template. In the same manner, you can
+ *    set the data in a sub-datastore by passing the `collection` parameter to
+ *    this method. By default, all templates take their data from the main
+ *    template collection. If you provide the name of a sub collection, your
+ *    template will react only to data changes in that collection. For
+ *    example, if you insert a template using
+ *    
+ *    ```js
+ *    CWTemplates.insert('myTemplate', { dataSource: 'myCollection'} );
+ *    ```
+ *    
+ *    calling `CWTemplates.set('name', 'Paul')` will not affect that template. 
+ *    Instead, you must call 
+ *    
+ *    ```js
+ *    CWTemplates.set('myCollection', 'name', 'Paul');
+ *    ``` 
+ *    
+ *    to update that particular template.
+ *
+ * Use {@link CWTemplates.setMultiple} to set multiple values at once.
  * @param {String} [collection] An optional collection name. Collections can
  *    be thought of as "sub data stores". Using collections, you can insert
  *    multiple templates with the same expression, but have them display
@@ -3040,9 +3255,23 @@ CWTemplates.set = function(collection, key, value) {
   }
 
   CWDatastore.set('_CWTemplates.'+collection, key, value);
-}.bind(CWTemplates);
+};
 
 
+/**
+ * Writes the given data to the template data store. This method takes a
+ *    key/value dictionary and will set each of them in the given template
+ *    collection. See {@link CWTemplates.set} for more information.
+ * @param {String} [collection] An optional collection name. Collections can
+ *    be thought of as "sub data stores". Using collections, you can insert
+ *    multiple templates with the same expression, but have them display
+ *    different data (also see {@link CWTemplates.insert}). If omitted, writes
+ *    to the main collection. Collection names may not start with an
+ *    underscore.
+ * @param {Object} dict A dictionary of key/value pairs. Every pair will be
+ *    inserted into the given collection. Existing keys will be overwritten.
+ * @function
+ */
 CWTemplates.setMultiple = function(collection, dict) {
   if (dict === undefined) {
     //Args: dict
@@ -3051,7 +3280,7 @@ CWTemplates.setMultiple = function(collection, dict) {
   }
 
   CWDatastore.setMultiple('_CWTemplates.'+collection, dict);
-}.bind(CWTemplates);
+};
 
 
 /**
@@ -3072,20 +3301,21 @@ CWTemplates.get = function(collection, key) {
   }
 
   return CWDatastore.get('_CWTemplates.'+collection, key);
-}.bind(CWTemplates);
+};
 
 /**
  * Compiles the given piece of template code. All <template> tags that contain
  *    a name attribute within that code will be registered as templates. After
  *    this step, the templates can be inserted using {@link
  *    CWTemplates.insert}.
- * @param  {String} templateData Ractive template code
+ * @param  {String} templateData Ractive/Mustache template code
  * @returns {Boolean} true if the template data contained at least one valid
  *    template, otherwise false
  * @function
  * @private
  */
 CWTemplates._compile = function(templateData) {
+  //Wrap templateData in a tag, so we can use .find() to search through it
   var content = $('<wrapper>');
   content.html(templateData);
 
@@ -3111,9 +3341,7 @@ CWTemplates._compile = function(templateData) {
 
   if (addedTemplates < 1) return false;
   return true;
-}.bind(CWTemplates);
-
-CWModules.add('CWTemplates');
+};
 /*global CWModules */
 'use strict';
 
@@ -3123,8 +3351,7 @@ CWModules.add('CWTemplates');
  * Utility module providing often-needed utility functions
  * @namespace CWUtil
  */
-var CWUtil = CWUtil || {};
-
+var CWUtil = CWModules.retrieve('CWUtil');
 
 /**
  * Returns an object that parses the given URL into its parts
@@ -3138,7 +3365,7 @@ CWUtil.parseURL = function(url) {
   parser.href = url;
 
   return parser;
-}.bind(CWUtil);
+};
 
 
 /**
@@ -3154,7 +3381,7 @@ CWUtil.unescape = function(escaped) {
       .replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"')
       .replace(/&#039;/g, "'");
-}.bind(CWUtil);
+};
 
 
 /**
@@ -3185,7 +3412,7 @@ CWUtil.getEventLocation = function(e, type) {
   }
 
   return pos;
-}.bind(CWUtil);
+};
 
 
 /**
@@ -3211,7 +3438,7 @@ CWUtil.randomInt = function(min, max) {
   }
 
   return Math.floor(Math.random() * (max - min + 1)) + min;
-}.bind(CWUtil);
+};
 
 
 /**
@@ -3222,7 +3449,7 @@ CWUtil.randomInt = function(min, max) {
  */
 CWUtil.isInt = function(value) {
   return (value === parseInt(value));
-}.bind(CWUtil);
+};
 
 
 /**
@@ -3233,7 +3460,7 @@ CWUtil.isInt = function(value) {
  */
 CWUtil.isString = function(value) {
   return (typeof(value) === 'string');
-}.bind(CWUtil);
+};
 
 
 /**
@@ -3244,7 +3471,7 @@ CWUtil.isString = function(value) {
  */
 CWUtil.isFunction = function(value) {
   return (typeof(value) === 'function');
-}.bind(CWUtil);
+};
 
 
 /**
@@ -3256,7 +3483,7 @@ CWUtil.isFunction = function(value) {
  */
 CWUtil.isObject = function(value) {
   return (typeof(value) === 'object' && value !== null);
-}.bind(CWUtil);
+};
 
 
 /**
@@ -3267,7 +3494,7 @@ CWUtil.isObject = function(value) {
  */
 CWUtil.isArray = function(value) {
   return Array.isArray(value);
-}.bind(CWUtil);
+};
 
 /**
  * Checks if the given value is in the given array.
@@ -3278,7 +3505,7 @@ CWUtil.isArray = function(value) {
  */
 CWUtil.inArray = function(value, array) {
   return (array.indexOf(value) > -1);
-}.bind(CWUtil);
+};
 
 /**
  * Creates a new random v4 UUID, thanks to {@link
@@ -3289,9 +3516,7 @@ CWUtil.inArray = function(value, array) {
  */
 CWUtil.createUUID = function(a) { 
   return a?(a ^ Math.random() * 16 >> a / 4).toString(16):([ 1e7 ] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g,CWUtil.createUUID);
-}.bind(CWUtil);
-
-CWModules.add('CWUtil');
+};
 'use strict';
 
 /**
@@ -3402,7 +3627,7 @@ CWVector.prototype.getP2 = function() {
  * @namespace  CWWebsocketMessageParser
  * @protected
  */
-var CWWebsocketMessageParser = CWWebsocketMessageParser || {};
+var CWWebsocketMessageParser = CWModules.retrieve('CWWebsocketMessageParser');
 
 
 /**
@@ -3415,23 +3640,44 @@ var CWWebsocketMessageParser = CWWebsocketMessageParser || {};
  * @protected
  */
 CWWebsocketMessageParser.parse = function(message) {
+  var promise;
   switch (message._name) {
-    case "_chunk"             : this._parseChunk(message);             break;
-    case "_ack"               : this._parseAck(message);               break;
-    case "_insert"            : this._parseInsert(message);            break;
-    case "_replace"           : this._parseReplace(message);           break;
-    case "_loadscript"        : this._parseLoadScript(message);        break;
-    case "_loadcss"           : this._parseLoadCSS(message);           break;
-    case "_loadtemplate"      : this._parseLoadTemplate(message);      break;
-    case "_inserttemplate"    : this._parseInsertTemplate(message);    break;
-    case "_wasstitched"       : this._parseWasStitched(message);       break;
-    case "_wasunstitched"     : this._parseWasUnstitched(message);     break;
-    case "_gotstitchneighbor" : this._parseGotStitchNeighbor(message); break;
-    case "_updatedatastore"   : this._parseUpdateDatastore(message);   break;
+    case "_chunk"             : promise = this._parseChunk(message);             break;
+    case "_ack"               : promise = this._parseAck(message);               break;
+    case "_insert"            : promise = this._parseInsert(message);            break;
+    case "_replace"           : promise = this._parseReplace(message);           break;
+    case "_loadscript"        : promise = this._parseLoadScript(message);        break;
+    case "_loadcss"           : promise = this._parseLoadCSS(message);           break;
+    case "_loadtemplate"      : promise = this._parseLoadTemplate(message);      break;
+    case "_inserttemplate"    : promise = this._parseInsertTemplate(message);    break;
+    case "_wasstitched"       : promise = this._parseWasStitched(message);       break;
+    case "_wasunstitched"     : promise = this._parseWasUnstitched(message);     break;
+    case "_gotstitchneighbor" : promise = this._parseGotStitchNeighbor(message); break;
+    case "_updatedatastore"   : promise = this._parseUpdateDatastore(message);   break;
   }
 
-  return true;
-}.bind(CWWebsocketMessageParser);
+  return promise;
+};
+
+
+var chunks = {};
+CWWebsocketMessageParser._parseChunk = function(message) {
+  if (message.originalID in chunks === false) {
+    chunks[message.originalID] = "";
+  }
+
+  chunks[message.originalID] += message.payload;
+
+  if (!!(message.isFinal) === true) {
+    var event = {};
+    event.data = chunks[message.originalID];
+    Connichiwa._onWebsocketMessage(event);
+
+    chunks[message.originalID] = undefined;
+  }
+
+  return false; //we don't ack chunks
+};
 
 
 /**
@@ -3444,7 +3690,8 @@ CWWebsocketMessageParser.parse = function(message) {
  */
 CWWebsocketMessageParser._parseAck = function(message) {
   CWEventManager.trigger("__ack_message" + message.original._id);
-}.bind(CWWebsocketMessageParser);
+  return false; //IMPORTANT: otherwise we sent an ack for an ack
+};
 
 
 /**
@@ -3457,7 +3704,8 @@ CWWebsocketMessageParser._parseAck = function(message) {
  */
 CWWebsocketMessageParser._parseInsert = function(message) {
   $(message.selector).append(message.html);
-}.bind(CWWebsocketMessageParser);
+  return new $.Deferred().resolve();
+};
 
 
 /**
@@ -3474,7 +3722,8 @@ CWWebsocketMessageParser._parseReplace = function(message) {
   } else {
     $(message.selector).replaceWith(message.html);
   }
-}.bind(CWWebsocketMessageParser);
+  return new $.Deferred().resolve();
+};
 
 
 /**
@@ -3486,13 +3735,16 @@ CWWebsocketMessageParser._parseReplace = function(message) {
  * @private
  */
 CWWebsocketMessageParser._parseLoadScript = function(message) {
+  var deferred = new $.Deferred();
   var that = this;
   $.getScript(message.url).done(function() {
-    Connichiwa._sendAck(message);
+    deferred.resolve();
   }).fail(function(f, s, t) {
     CWDebug.err(1, "There was an error loading '" + message.url + "': " + t);
+    deferred.reject();
   });
-}.bind(CWWebsocketMessageParser);
+  return deferred;
+};
 
 
 /**
@@ -3509,19 +3761,21 @@ CWWebsocketMessageParser._parseLoadCSS = function(message) {
   cssEntry.setAttribute("type", "text/css");
   cssEntry.setAttribute("href", message.url);
   $("head").append(cssEntry);
-  Connichiwa._sendAck(message);
-}.bind(CWWebsocketMessageParser);
+  return new $.Deferred().resolve();
+};
 
 
 CWWebsocketMessageParser._parseLoadTemplate = function(message) {
   CWTemplates.load(message.paths);
+  return new $.Deferred().resolve();
 };
 
 
 CWWebsocketMessageParser._parseInsertTemplate = function(message) {
-  CWTemplates.insert(message.templateName, message.target, message.data, function() {
-    Connichiwa._sendAck(message);
-  });
+  var deferred = new $.Deferred();
+  message.options.onComplete = function() { deferred.resolve(); };
+  CWTemplates.insert(message.templateName, message.options);
+  return deferred;
 };
 
 
@@ -3535,7 +3789,8 @@ CWWebsocketMessageParser._parseInsertTemplate = function(message) {
  */
 CWWebsocketMessageParser._parseWasStitched = function(message) {
   CWEventManager.trigger("wasStitched", message);
-}.bind(CWWebsocketMessageParser);
+  return new $.Deferred().resolve();
+};
 
 
 /**
@@ -3548,7 +3803,8 @@ CWWebsocketMessageParser._parseWasStitched = function(message) {
  */
 CWWebsocketMessageParser._parseWasUnstitched = function(message) {
   CWEventManager.trigger("wasUnstitched", message);
-}.bind(CWWebsocketMessageParser);
+  return new $.Deferred().resolve();
+};
 
 
 /**
@@ -3562,7 +3818,8 @@ CWWebsocketMessageParser._parseWasUnstitched = function(message) {
  */
 CWWebsocketMessageParser._parseGotStitchNeighbor = function(message) {
   CWEventManager.trigger("gotstitchneighbor", message);
-}.bind(CWWebsocketMessageParser);
+  return new $.Deferred().resolve();
+};
 
 
 /**
@@ -3576,7 +3833,7 @@ CWWebsocketMessageParser._parseUpdateDatastore = function(message) {
   //message.data contains datastore collections
   //Walk over every collection
   $.each(message.data, function(collection, collectionContent) {
-    CWDatastore._set(collection, collectionContent, undefined, false, true);
+    CWDatastore._set(collection, collectionContent, false);
     //Walk over every entry of the collection
     //
     // $.each(collectionContent, function(key, value) {
@@ -3585,9 +3842,8 @@ CWWebsocketMessageParser._parseUpdateDatastore = function(message) {
       // CWDatastore._set(collection, key, value, false);
     // });
   });
-}.bind(CWWebsocketMessageParser);
-
-CWModules.add('CWWebsocketMessageParser');
+  return new $.Deferred().resolve();
+};
 /* global CWEventManager, CWDevice, CWNativeBridge, CWUtil, CWDebug, CWModules */
 'use strict';
 
@@ -3600,7 +3856,7 @@ CWModules.add('CWWebsocketMessageParser');
  *    and other devices and more
  * @namespace Connichiwa
  */
-var Connichiwa = Connichiwa || {};
+var Connichiwa = CWModules.retrieve('Connichiwa');
 
 
 /**
@@ -3691,12 +3947,8 @@ Connichiwa.__constructor = function() {
     return;
   }
 
-  //If no native layer runs in the background, we have to take care of 
-  //establishing a connection ourselves
-  if (CWNativeBridge.isRunningNative() !== true) {
-    this._connectWebsocket();
-  }
-}.bind(Connichiwa);
+  this._connectWebsocket();
+};
 
 
 /**
@@ -3722,7 +3974,30 @@ Connichiwa.on = function(eventName, callback) {
   } 
   
   CWEventManager.register(eventName, callback);
-}.bind(Connichiwa);
+};
+
+
+/**
+ * Removes all callbacks from the given Connichiwa system event. No callbacks
+ *    for that event will be triggered anymore.
+ * @param  {String}   eventName The event name to remove events from.
+ * @function
+ *//**
+ * Removes the given callback from every Connichiwa system event. The callback will
+ *    not be triggered for any system event anymore.
+ * @param  {Function} callback  The callback to remove. This function will be
+ *    removed from every event it has been registered for.
+ * @function
+ *//**
+ * Removes the given callback from the given Connichiwa system event. The
+ *    callback will not be triggered for that event anymore.
+ * @param  {String}   eventName The event to remove the callback from
+ * @param  {Function} callback  The callback function to remove
+ * @function
+ */
+Connichiwa.off = function(eventName, callback) {
+  CWEventManager.unregister(eventName, callback);
+};
 
 
 /**
@@ -3738,7 +4013,7 @@ Connichiwa.on = function(eventName, callback) {
  */
 Connichiwa.onMessage = function(name, callback) {
   this.on('message' + name, callback);
-}.bind(Connichiwa);
+};
 
 
 /**
@@ -3753,23 +4028,21 @@ Connichiwa.onMessage = function(name, callback) {
  */
 Connichiwa.onLoad = function(callback) {
   if (document.readyState === 'complete') {
-    CWDebug.log(1, 'Fire immediately');
     //Timeout so the callback is always called asynchronously
     window.setTimeout(callback, 0);
   } else {
-    CWDebug.log(1, 'Fire delayed');
     this.on('ready', callback);
   }
-}.bind(Connichiwa);
+};
 
 
 //TODO remove, find an easy way to send a message to the master
-Connichiwa.send = function(target, name, message) {
+Connichiwa.send = function(target, name, message, callback) {
   message._name = name;
   message._source = Connichiwa.getIdentifier();
   message._target = target;
-  return this._sendObject(message);
-}.bind(Connichiwa);
+  return this._sendObject(message, callback);
+};
 
 
 /**
@@ -3785,7 +4058,7 @@ Connichiwa.send = function(target, name, message) {
  */
 Connichiwa.respond = function(originalMessage, name, responseObject) {
   this.send(originalMessage._source, name, responseObject);
-}.bind(Connichiwa);
+};
 
 
 /**
@@ -3807,22 +4080,22 @@ Connichiwa.broadcast = function(name, message, sendToSelf) {
   }
   
   this.send('broadcast', name, message);
-}.bind(Connichiwa);
+};
 
 
 /**
  * Sends an acknowledgement message (with name `_ack`) back to the device
- *    where the given message originated from. The given message will be
- *    attached to the acknowledgement and sent back as well.
+ *    where the given message originated from. The original message's ID will 
+ *    be attached to the acknowledgement.
  * @param  {Object} message A valid message object that was received from a
  *    device
  * @function
  * @private
  */
 Connichiwa._sendAck = function(message) {
-  var ackMessage = { original : message };
+  var ackMessage = { original : { _id: message._id } };
   this.send(message._source, '_ack', ackMessage);
-}.bind(Connichiwa);
+};
 
 
 /**
@@ -3831,11 +4104,13 @@ Connichiwa._sendAck = function(message) {
  *    send it via the websocket. The message must at least have a `_name` key,
  *    otherwise this method will log an error and not send the message
  * @param  {Object} message The message object to send
+ * @param {Function} [callback] An optional callback that will be called once
+ *    the object was acknowledged by the other device
  * @return {Number} The random ID that was assigned to the message
  * @function
  * @private
  */
-Connichiwa._sendObject = function(message) {
+Connichiwa._sendObject = function(message, callback) {
   if (('_name' in message) === false) {
     CWDebug.err('Tried to send message without _name, ignoring: ' + JSON.stringify(message));
     return;
@@ -3847,11 +4122,20 @@ Connichiwa._sendObject = function(message) {
   var messageString = JSON.stringify(message);
   CWDebug.log(4, 'Sending message: ' + messageString);
 
+  if (callback !== undefined) {
+    Connichiwa.on('__ack_message' + message._id, function() {
+      callback();
+      Connichiwa.off('__ack_message' + message._id);
+    });
+  }
+
   //If the message is too long, chunk it in pieces of 2^15 bytes
   //We need to do that because some browser (Safari *cough*) can't
   //really handle messages that are very large.
   //We chunk the messages by framing the message with another message
-  // if (messageString.length > 32700) {
+  // var SIZE = 3850;
+  // var SIZE = 16000;
+  // if (messageString.length > SIZE) {
   //   var pos = 0;
   //   while (pos < messageString.length) { 
   //     var chunkMessage = {
@@ -3863,30 +4147,31 @@ Connichiwa._sendObject = function(message) {
   //       payload    : "",
   //       isFinal    : 0,
   //     };
-  //     chunkMessage.payload = messageString.substr(pos, 32700);
+  //     chunkMessage.payload = messageString.substr(pos, SIZE);
 
-  //     var length = JSON.stringify(chunkMessage).length;
+  //     // var length = JSON.stringify(chunkMessage).length;
   //     var overload = 0;
-  //     if (length > 32700) {
-  //       overload = length - 32700;
-  //       chunkMessage.payload = chunkMessage.payload.substr(0, 32700-overload);
-  //     }
-  //     chunkMessage.isFinal = (pos+(32700 - overload)>=messageString.length) ? 1 : 0;
+  //     // if (length > SIZE) {
+  //       // overload = length - SIZE;
+  //       // chunkMessage.payload = chunkMessage.payload.substr(0, SIZE-overload);
+  //     // }
+  //     chunkMessage.isFinal = (pos+(SIZE - overload) >= messageString.length) ? 1 : 0;
 
   //     CWDebug.log(1, "Sending chunk of size "+JSON.stringify(chunkMessage).length);
+  //     // CWDebug.log(1, "IS FINAL? "+chunkMessage.isFinal);
   //     //Once again, we need a setTimeout to lower the possibility of a crash on iOS
-  //     window.setTimeout(function() { this._websocket.send(JSON.stringify(message)); }.bind(this), 0);
+  //     var that = this;
+  //     this._websocket.send(JSON.stringify(chunkMessage));
 
-  //     pos += 32700 - overload;
+  //     pos += SIZE - overload;
   //     CWDebug.log(1, "Pos is now "+pos+"/"+messageString.length);
   //   }
   // } else {
-    //Once again, we need a setTimeout to lower the possibility of a crash on iOS
     this._websocket.send(messageString);
   // }
 
   return message._id;
-}.bind(Connichiwa);
+};
 
 
 
@@ -3897,7 +4182,7 @@ Connichiwa._sendObject = function(message) {
  */
 Connichiwa._disconnectWebsocket = function() {
   this._websocket.close();
-}.bind(Connichiwa);
+};
 
 
 /**
@@ -3914,9 +4199,7 @@ Connichiwa._cleanupWebsocket = function() {
     this._websocket.onerror   = undefined;
     this._websocket           = undefined;
   }
-}.bind(Connichiwa);
-
-CWModules.add('Connichiwa');
+};
 /**
  * Represents a two-dimensional points
  * @typedef Point
@@ -4020,6 +4303,14 @@ CWModules.add('Connichiwa');
  */
 
 /**
+ * This event is fired when the proximity sensor of the device reports that
+ *    its state changed
+ * @event proximityStateChanged
+ * @param {Bool} proximityState The new proximity state - `true` if something
+ *    is in front of the proximity sensor of the device, otherwise `false`
+ */
+
+/**
  * This event is fired when a new device is detected over Bluetooth
  * @event devicedetected
  * @param {CWDevice} device The detected device
@@ -4068,58 +4359,70 @@ CWModules.add('Connichiwa');
  *    will continue to send events such as {@link event:devicedistancechanged}
  * @event devicedisconnected
  * @param {CWDevice} device The device that disconnected
- */'use strict';
+ */
 
-;(function($) {
-  $(function() {
-    /**
-     * This method takes an arrya of deferred objects and returns a new
-     *    "master" deferred object. The master will wait for all passed
-     *    deferreds to either resolve or fail. It will then:
-     *
-     * * Be resolved if all deferreds were resolved * Fail if one or more
-     *    deferreds failed
-     *
-     * In contrast to passing multiple deferreds to jQuery's $.when directly,
-     *    the master deferred is not immediately rejected as soon as a single
-     *    deferred fails. Instead, it waits for all deferreds to resolve or
-     *    reject.
-     * @copyright Roman Rädle <roman.raedle at uni-konstanz.de >
-     * @param  {Array} deferreds An array of jQuery Deferred objects
-     * @return {$.Deferred} A jQuery Deferred object that is rejected or
-     *    resolved when all passed deferreds have been rejected or resolved
-     */
-    $.when.all = function(deferreds) {
-      var masterDeferred = new $.Deferred();
+/**
+ * This event is fired whenever the datastore on the local device changed. For
+ *    example, this is the result of {@link CWDatastore.set} or {@link
+ *    CWDatastore.setMultiple}. Note that for {@link CWDatastore.setMultiple},
+ *    only a single event with a collection of changes is triggered.
+ * @event _datastorechanged
+ * @param {String} collection The collection that changed, or `undefined` if
+ *    the default collection has changed
+ * @param {Object} changes Key-value pairs, each representing a change to the
+ *    reported collection. The key is of each entry is the key in the
+ *    collection that changed, and the value is the new value stored for that
+ *    key
+ * @protected
+ */
+'use strict';
 
-      //Walk over all our deferreds and wait for all of them to either 
-      //resolve or fail:
-      //* When all have resolved, resolve the master
-      //* When one or more fail, reject the master
-      var remaining = deferreds.length;
-      var anyReject = false;
-      $.each(deferreds, function(i, deferred) {
-        deferred.fail(function() {
-          anyReject = true;
-        }).always(function() {
-          remaining--;
-          if (remaining === 0) {
-            if (anyReject) masterDeferred.reject();
-            else masterDeferred.resolve();
-          }
-        });
-      });
+/**
+ * This method takes an arrya of deferred objects and returns a new
+ *    "master" deferred object. The master will wait for all passed
+ *    deferreds to either resolve or fail. It will then:
+ *
+ * * Be resolved if all deferreds were resolved * Fail if one or more
+ *    deferreds failed
+ *
+ * In contrast to passing multiple deferreds to jQuery's $.when directly,
+ *    the master deferred is not immediately rejected as soon as a single
+ *    deferred fails. Instead, it waits for all deferreds to resolve or
+ *    reject.
+ * @copyright Roman Rädle <roman.raedle at uni-konstanz.de >
+ * @param  {Array} deferreds An array of jQuery Deferred objects
+ * @return {$.Deferred} A jQuery Deferred object that is rejected or
+ *    resolved when all passed deferreds have been rejected or resolved
+ */
+$.when.all = function(deferreds) {
+  var masterDeferred = new $.Deferred();
 
-      return masterDeferred;
-    };
+  //Walk over all our deferreds and wait for all of them to either 
+  //resolve or fail:
+  //* When all have resolved, resolve the master
+  //* When one or more fail, reject the master
+  var remaining = deferreds.length;
+  var anyReject = false;
+  $.each(deferreds, function(i, deferred) {
+    deferred.fail(function() {
+      anyReject = true;
+    }).always(function() {
+      remaining--;
+      if (remaining === 0) {
+        if (anyReject) masterDeferred.reject();
+        else masterDeferred.resolve();
+      }
+    });
   });
-})(jQuery);
+
+  return masterDeferred;
+};
 /* global Connichiwa, CWDeviceManager, CWEventManager, CWDevice, CWDebug, CWModules */
 'use strict';
 
 
 
-var CWNativeBridge = CWNativeBridge || {};
+var CWNativeBridge = CWModules.retrieve('CWNativeBridge');
 
 
 /**
@@ -4127,33 +4430,25 @@ var CWNativeBridge = CWNativeBridge || {};
  * @ignore
  */
 CWNativeBridge.parse = function(message) {
-  CWDebug.log(4, 'Parsing native message (remote): ' + message);
-  var object = JSON.parse(message);
+  var object;
+  if (CWUtil.isString(message)) {
+    CWDebug.log(4, 'Parsing native message (master): ' + message);
+    object = JSON.parse(message);
+  } else {
+    object = message;
+  }
+
+  CWDebug.log(1, "NATIVE PARSE "+object._name);
+
   switch (object._name)
   {
-    case 'runsnative':          this._parseRunsNative(object); break;
-    case 'connectwebsocket':    this._parseConnectWebsocket(object); break;
-    case 'cwdebug':             this._parseDebug(object); break;
-    case 'localinfo':           this._parseLocalInfo(object); break;
-    case 'disconnectwebsocket': this._parseDisconnectWebsocket(object); break;
+    case 'runsnative':            this._parseRunsNative(object); break;
+    case 'cwdebug':               this._parseDebug(object); break;
+    case 'localinfo':             this._parseLocalInfo(object); break;
+    case 'disconnectwebsocket':   this._parseDisconnectWebsocket(object); break;
+    case 'proximitystatechanged': this._parseProximityStateChanged(object); break;
   }
-}.bind(CWNativeBridge);
-
-
-/**
- * (Available on remote devices only)
- *
- * Parses `connectwebsocket` messages. This message tells the library that the
- *    native layer is ready and that the websocket should establish a
- *    connection
- * @param  {Object} message The object that represents the JSON message that
- *    was received from the native layer
- * @function
- * @private
- */
-CWNativeBridge._parseConnectWebsocket = function(message) {
-  Connichiwa._connectWebsocket();
-}.bind(CWNativeBridge);
+};
 
 
 /**
@@ -4169,8 +4464,9 @@ CWNativeBridge._parseConnectWebsocket = function(message) {
  */
 CWNativeBridge._parseLocalInfo = function(message)  {
   Connichiwa._setLocalDevice(message);
-  CWEventManager.trigger('ready'); 
-}.bind(CWNativeBridge);
+  CWEventManager.trigger('localDeviceChanged', Connichiwa.getLocalDevice());
+  // CWEventManager.trigger('ready'); 
+};
 
 
 
@@ -4187,14 +4483,21 @@ CWNativeBridge._parseLocalInfo = function(message)  {
  */
 CWNativeBridge._parseDisconnectWebsocket = function(message) {
   Connichiwa._disconnectWebsocket();  
-}.bind(CWNativeBridge);
+};
 
-CWModules.add('CWNativeBridge');
+
+CWNativeBridge._parseProximityStateChanged = function(message) {
+  //
+  //TODO: Code duplicated from master, booo
+  //
+  CWDebug.log(5, 'Proximity State Changed: ' + message.proximityState);
+  CWEventManager.trigger('proximityStateChanged', message.proximityState);
+};
 /* global Connichiwa, CWEventManager, CWDebug, CWModules */
 'use strict';
 
 
-var CWWebsocketMessageParser = CWWebsocketMessageParser || {};
+var CWWebsocketMessageParser = CWModules.retrieve('CWWebsocketMessageParser');
 
 /**
  * (Available on remote devices only)
@@ -4208,29 +4511,32 @@ var CWWebsocketMessageParser = CWWebsocketMessageParser || {};
  * @protected
  */
 CWWebsocketMessageParser.parseOnRemote = function(message) {
+  var promise;
   switch (message._name) {
-    case '_debuginfo'      : this._parseDebugInfo(message); break;
-    case '_softdisconnect' : this._parseSoftDisconnect(message); break;
+    case '_debuginfo'      : promise = this._parseDebugInfo(message); break;
+    case '_softdisconnect' : promise = this._parseSoftDisconnect(message); break;
   }
-}.bind(CWWebsocketMessageParser);
+
+  return promise;
+};
 
 
 CWWebsocketMessageParser._parseDebugInfo = function(message) {
   CWDebug._setDebugInfo(message);
-}.bind(CWWebsocketMessageParser);
+  return new $.Deferred().resolve();
+};
 
 
 CWWebsocketMessageParser._parseSoftDisconnect = function(message) {
   Connichiwa._softDisconnectWebsocket();
-}.bind(CWWebsocketMessageParser);
-
-CWModules.add('CWWebsocketMessageParser');
+  return new $.Deferred().resolve();
+};
 /* global CWEventManager, CWWebsocketMessageParser, CWDevice, CWNativeBridge, CWSystemInfo, CWUtil, CWDebug, CWModules */
 'use strict';
 
 
 
-var Connichiwa = Connichiwa || {};
+var Connichiwa = CWModules.retrieve('Connichiwa');
 
 
 
@@ -4263,7 +4569,7 @@ Connichiwa._isReconnecting = false;
  */
 Connichiwa.getLocalDevice = function() {
   return this._localDevice;
-}.bind(Connichiwa);
+};
 
 
 /**
@@ -4272,7 +4578,7 @@ Connichiwa.getLocalDevice = function() {
  */
 Connichiwa.getIdentifier = function() {
   return this._localDevice.getIdentifier();
-}.bind(Connichiwa);
+};
 
 
 /**
@@ -4281,7 +4587,7 @@ Connichiwa.getIdentifier = function() {
  */
 Connichiwa.isMaster = function() {
   return false;
-}.bind(Connichiwa);
+};
 
 
 /**
@@ -4296,14 +4602,14 @@ Connichiwa.isMaster = function() {
  * @private
  */
 Connichiwa._setLocalDevice = function(properties) {
-  if (this._localDevice === undefined) {
-    properties.isLocal = true;
-    this._localDevice = new CWDevice(properties);
-  }
+  properties.isLocal = true;
 
-  //Let the master know about our new device information
-  this.send("master", "remoteinfo", properties);
-}.bind(Connichiwa);
+  if (this._localDevice === undefined) {
+    this._localDevice = new CWDevice(properties);
+  } else {
+    this._localDevice._setProperties(properties);
+  }
+};
 
 
 /**
@@ -4312,6 +4618,7 @@ Connichiwa._setLocalDevice = function(properties) {
  */
 Connichiwa._connectWebsocket = function() {
   CWDebug.log(3, "Connecting");
+
   //If we replace the websocket (or re-connect) we don't want to call onWebsocketClose
   //Therefore, first cleanup, then close
   var oldWebsocket = this._websocket;
@@ -4325,7 +4632,7 @@ Connichiwa._connectWebsocket = function() {
   this._websocket.onmessage = this._onWebsocketMessage;
   this._websocket.onclose   = this._onWebsocketClose;
   this._websocket.onerror   = this._onWebsocketError;
-}.bind(Connichiwa);
+};
 
 
 /**
@@ -4338,8 +4645,6 @@ Connichiwa._onWebsocketOpen = function() {
 
   var runsNative = CWNativeBridge.isRunningNative();
 
-  CWNativeBridge.callOnNative("nativeWebsocketDidOpen");
-
   if (runsNative === false) {
     //If we have no native layer and are reconnecting we now need to refresh the
     //page to reset the remote's state
@@ -4347,17 +4652,31 @@ Connichiwa._onWebsocketOpen = function() {
       location.reload(true);
       return;
     }
-
-    //We have no native layer that delivers us accurate local device info
-    //Therefore, we create as much info as we can ourselves
-    var localInfo = {
-      identifier : CWUtil.createUUID(),
-      launchDate : Date.now() / 1000.0,
-      ppi        : CWSystemInfo.PPI()
-    };
-    this._setLocalDevice(localInfo);
   }
-}.bind(Connichiwa);
+
+  //Create local device
+  //This device might be extended by the native layer in the future
+  var localInfo = {
+    identifier : CWNativeBridge.isRunningNative() ? window._CW_NATIVE.identifier : CWUtil.createUUID(),
+    launchDate : Date.now() / 1000.0,
+    ppi        : CWSystemInfo.PPI()
+  };
+  this._setLocalDevice(localInfo);
+
+  Connichiwa.send("server", "_remote_identification", { identifier: localInfo.identifier });
+
+  CWNativeBridge.callOnNative("nativeWebsocketDidOpen");
+
+  //Important: This must be last, as every message before _remote_identification
+  //is lost
+  this.send("master", "remoteinfo", localInfo);
+
+  CWEventManager.trigger('ready'); 
+
+  //localDeviceChanged must be after ready, so that code in Connichiwa.onLoad
+  //can react to the inital localDevice data
+  CWEventManager.trigger('localDeviceChanged', Connichiwa.getLocalDevice());
+};
 
 
 /**
@@ -4382,12 +4701,29 @@ Connichiwa._onWebsocketMessage = function(e) {
   //We use requestAnimationFrame in an attempt to prevent those crashes
   var that = this;
   window.requestAnimationFrame(function() {
-    CWWebsocketMessageParser.parse(message);
-    CWWebsocketMessageParser.parseOnRemote(message);
+    var p1 = CWWebsocketMessageParser.parse(message);
+    var p2 = CWWebsocketMessageParser.parseOnRemote(message);
 
     if (message._name) CWEventManager.trigger("message" + message._name, message);
+
+    //The parse methods can return a jQuery promise:
+    //If any of them do, we will send back an ack only once the promise resolves
+    //If both of them return undefined we immediately send back an ack
+    //If any of them explicitly returns false, we don't send back an ack
+    //All other return values are not allowed
+    if (p1 === false || p2 === false) return;
+    
+    //Prefer p2 over p1, if both are undefined we return an ack immediately by
+    //creating a resolved promise
+    var promise = p2;
+    if (promise === undefined) promise = p1;
+    if (promise === undefined) promise = new $.Deferred().resolve();
+
+    $.when(promise).always(function() {
+      Connichiwa._sendAck(message);
+    });
   });
-}.bind(Connichiwa);
+};
 
 
 /**
@@ -4406,9 +4742,9 @@ Connichiwa._onWebsocketClose = function() {
   //can be reestablished over Bluetooth. If we are running native-less we
   //try to reconnect to the master
   if (runsNative === false) {
-    window.setTimeout(this._tryWebsocketReconnect, 5000);
+    window.setTimeout(this._tryWebsocketReconnect, 2500);
   }
-}.bind(Connichiwa);
+};
 
 
 /**
@@ -4418,14 +4754,14 @@ Connichiwa._onWebsocketClose = function() {
 Connichiwa._onWebsocketError = function() {
   CWDebug.log(3, "Error");
   this._onWebsocketClose();
-}.bind(Connichiwa);
+};
 
 
 Connichiwa._softDisconnectWebsocket = function() {
   this._softDisconnected = true;
   // nativeSoftDisconnect();
   CWNativeBridge.callOnNative("nativeSoftDisconnect");
-}.bind(Connichiwa);
+};
 
 
 /**
@@ -4449,8 +4785,6 @@ Connichiwa._tryWebsocketReconnect = function() {
 
   CWDebug.log(3, "Try reconnect");
   this._connectWebsocket();
-  window.setTimeout(this._tryWebsocketReconnect, 5000);
-}.bind(Connichiwa);
-
-CWModules.add('Connichiwa');
+  window.setTimeout(this._tryWebsocketReconnect, 2500);
+};
 CWModules.init();

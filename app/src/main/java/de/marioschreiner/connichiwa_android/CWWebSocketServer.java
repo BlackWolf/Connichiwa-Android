@@ -6,7 +6,9 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import fi.iki.elonen.NanoWebSocketServer;
@@ -55,15 +57,13 @@ public class CWWebSocketServer extends NanoWebSocketServer {
         try {
             JSONObject msg = new JSONObject(message);
 
-            if (msg.getString("_name").equalsIgnoreCase("localinfo")) {
+            if (msg.getString("_name").equalsIgnoreCase("_master_identification")) {
                 this.localSocket = socket;
             }
 
-            if (msg.getString("_name").equalsIgnoreCase("localinfo") || msg.getString("_name").equalsIgnoreCase("remoteinfo")) {
+            if (msg.getString("_name").equalsIgnoreCase("_master_identification") || msg.getString("_name").equalsIgnoreCase("_remote_identification")) {
                 String identifier = msg.getString("identifier");
                 this.socketIdentifiers.put(identifier, socket);
-
-                this.push("master", message); //forward message to master to inform it about the new device
             }
         } catch (JSONException e) {
             e.printStackTrace();
@@ -78,7 +78,19 @@ public class CWWebSocketServer extends NanoWebSocketServer {
             String target = msg.getString("_target");
 
             if (target.equalsIgnoreCase("broadcast")) {
-                this.pushToAll(message);
+                Boolean backToSource = false;
+                try {
+                    msg.getBoolean("_broadcastToSource");
+                } catch (JSONException e) {
+
+                }
+                if (backToSource) {
+                    this.pushToAll(message);
+                } else {
+                    List exception = new ArrayList<String>();
+                    exception.add(identifier);
+                    this.pushToAll(message, exception);
+                }
             } else {
                 this.push(target, message);
             }
@@ -94,10 +106,6 @@ public class CWWebSocketServer extends NanoWebSocketServer {
     }
 
     public void push(String target, String payload) {
-        if (target.equalsIgnoreCase("broadcast")) {
-            this.pushToAll(payload);
-            return;
-        }
         CWWebSocket socket = this.getSocketForIdentifier(target);
 
         if (socket != null) {
@@ -110,7 +118,14 @@ public class CWWebSocketServer extends NanoWebSocketServer {
     }
 
     public void pushToAll(String payload) {
+        this.pushToAll(payload, null);
+    }
+
+    public void pushToAll(String payload, List<String> exceptions) {
         for (CWWebSocket socket : this.socketIdentifiers.values()) {
+            String identifier = this.getIdentifierForSocket(socket);
+            if (exceptions != null && exceptions.contains(identifier)) continue;
+
             try {
                 socket.send(payload);
             } catch (IOException e) {
